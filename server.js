@@ -1,5 +1,5 @@
-// Shopify AI Agent Backend
-// Built for Udo's UD Store (ud-9851336705.myshopify.com)
+// Shopify AI Agent Backend v2 - Full Pipeline
+// Modules: Trend Discovery → Product Ideas → Printify → Shopify → TikTok Ad Copy
 
 const express = require('express');
 const cors = require('cors');
@@ -16,232 +16,319 @@ const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const SHOPIFY_SCOPES = 'read_products,write_products,read_orders,write_orders,read_inventory,write_inventory,read_customers,write_customers';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const PRINTIFY_API_KEY = process.env.PRINTIFY_API_KEY;
+const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
-// In-memory token storage (in production, use a database)
 let SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 
 // ========== MIDDLEWARE ==========
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // ========== HEALTH CHECK ==========
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     store: SHOPIFY_STORE,
-    connected: !!SHOPIFY_ACCESS_TOKEN,
-    message: 'Shopify Agent Backend is running'
+    shopify_connected: !!SHOPIFY_ACCESS_TOKEN,
+    claude_connected: !!ANTHROPIC_API_KEY,
+    printify_connected: !!PRINTIFY_API_KEY,
+    message: 'Shopify Agent Backend v2 is running'
   });
 });
 
 // ========== SHOPIFY OAUTH ==========
-// Step 1: Redirect user to Shopify for authorization
 app.get('/auth/shopify', (req, res) => {
   const redirectUri = `${APP_URL}/auth/callback`;
   const installUrl = `https://${SHOPIFY_STORE}/admin/oauth/authorize?` +
-    `client_id=${SHOPIFY_CLIENT_ID}&` +
-    `scope=${SHOPIFY_SCOPES}&` +
-    `redirect_uri=${redirectUri}`;
+    `client_id=${SHOPIFY_CLIENT_ID}&scope=${SHOPIFY_SCOPES}&redirect_uri=${redirectUri}`;
   res.redirect(installUrl);
 });
 
-// Step 2: Handle Shopify callback and exchange code for token
 app.get('/auth/callback', async (req, res) => {
   const { code, shop } = req.query;
   if (!code) return res.status(400).send('Missing authorization code');
-
   try {
     const tokenResponse = await axios.post(
       `https://${shop || SHOPIFY_STORE}/admin/oauth/access_token`,
-      {
-        client_id: SHOPIFY_CLIENT_ID,
-        client_secret: SHOPIFY_CLIENT_SECRET,
-        code: code,
-      }
+      { client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, code }
     );
-
     SHOPIFY_ACCESS_TOKEN = tokenResponse.data.access_token;
     console.log('✅ Shopify access token obtained!');
-    
-    res.send(`
-      <html><body style="font-family:sans-serif;padding:40px;text-align:center;background:#0a150a;color:#96bf48;">
-        <h1>✅ Shopify Connected!</h1>
-        <p>Your access token has been saved.</p>
-        <p style="color:#3a6a3a;">Token: ${SHOPIFY_ACCESS_TOKEN.substring(0, 12)}...</p>
-        <p><strong>IMPORTANT:</strong> Copy this full token and save it as SHOPIFY_ACCESS_TOKEN in Railway environment variables to persist it:</p>
-        <code style="background:#1a2e1a;padding:12px;display:block;margin:20px;border-radius:8px;word-break:break-all;">${SHOPIFY_ACCESS_TOKEN}</code>
-        <p>You can close this tab now.</p>
-      </body></html>
-    `);
+    res.send(`<html><body style="font-family:sans-serif;padding:40px;text-align:center;background:#0a150a;color:#96bf48;">
+      <h1>✅ Shopify Connected!</h1>
+      <p>Save this token in Railway as <strong>SHOPIFY_ACCESS_TOKEN</strong>:</p>
+      <code style="background:#1a2e1a;padding:12px;display:block;margin:20px;border-radius:8px;word-break:break-all;">${SHOPIFY_ACCESS_TOKEN}</code>
+    </body></html>`);
   } catch (err) {
-    console.error('OAuth error:', err.response?.data || err.message);
     res.status(500).send('OAuth failed: ' + (err.response?.data?.error_description || err.message));
   }
 });
 
-// ========== SHOPIFY API HELPERS ==========
+// ========== HELPERS ==========
 async function shopifyRequest(endpoint, method = 'GET', data = null) {
-  if (!SHOPIFY_ACCESS_TOKEN) {
-    throw new Error('Not authenticated. Visit /auth/shopify to connect your store.');
-  }
-
+  if (!SHOPIFY_ACCESS_TOKEN) throw new Error('Shopify not connected');
   const config = {
     method,
     url: `https://${SHOPIFY_STORE}/admin/api/2024-10/${endpoint}`,
-    headers: {
-      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN, 'Content-Type': 'application/json' },
   };
   if (data) config.data = data;
-
-  const response = await axios(config);
-  return response.data;
+  const r = await axios(config);
+  return r.data;
 }
 
-// ========== PRODUCT ENDPOINTS ==========
+async function printifyRequest(endpoint, method = 'GET', data = null) {
+  if (!PRINTIFY_API_KEY) throw new Error('Printify not connected');
+  const config = {
+    method,
+    url: `https://api.printify.com/v1/${endpoint}`,
+    headers: { 'Authorization': `Bearer ${PRINTIFY_API_KEY}`, 'Content-Type': 'application/json' },
+  };
+  if (data) config.data = data;
+  const r = await axios(config);
+  return r.data;
+}
+
+function getClaudeClient() {
+  if (!ANTHROPIC_API_KEY) throw new Error('Anthropic API key not configured');
+  return new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+}
+
+// ========== SHOPIFY ENDPOINTS ==========
 app.get('/api/products', async (req, res) => {
-  try {
-    const data = await shopifyRequest('products.json?limit=50');
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  try { res.json(await shopifyRequest('products.json?limit=50')); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/products/:id', async (req, res) => {
-  try {
-    const data = await shopifyRequest(`products/${req.params.id}.json`);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/products/:id', async (req, res) => {
-  try {
-    const data = await shopifyRequest(`products/${req.params.id}.json`, 'PUT', { product: req.body });
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ========== ORDER ENDPOINTS ==========
 app.get('/api/orders', async (req, res) => {
-  try {
-    const status = req.query.status || 'any';
-    const data = await shopifyRequest(`orders.json?status=${status}&limit=50`);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  try { res.json(await shopifyRequest(`orders.json?status=any&limit=50`)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/orders/:id/fulfill', async (req, res) => {
-  try {
-    const data = await shopifyRequest(
-      `orders/${req.params.id}/fulfillments.json`,
-      'POST',
-      { fulfillment: { notify_customer: true } }
-    );
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ========== CUSTOMER ENDPOINTS ==========
 app.get('/api/customers', async (req, res) => {
+  try { res.json(await shopifyRequest('customers.json?limit=50')); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ========== TREND DISCOVERY (Module 1) ==========
+app.post('/api/trends/discover', async (req, res) => {
   try {
-    const data = await shopifyRequest('customers.json?limit=50');
-    res.json(data);
+    const { niche = 'all niches', count = 5 } = req.body;
+    const claude = getClaudeClient();
+    
+    const response = await claude.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 2048,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [{
+        role: 'user',
+        content: `Search the web for the TOP ${count} TRENDING product categories or items RIGHT NOW in ${niche} that would work great for print-on-demand (t-shirts, hoodies, mugs, posters, hats).
+
+Use web search to look up:
+- Current TikTok trending hashtags & viral content
+- Google Trends rising searches
+- Etsy bestsellers right now  
+- Amazon Movers & Shakers
+- Any hot cultural moments / memes / news driving merch sales
+
+For each trending item, return JSON in this EXACT format:
+\`\`\`json
+{
+  "trends": [
+    {
+      "name": "Trend name (e.g. 'Pickleball Apparel')",
+      "category": "Sports / Pop Culture / Fashion / etc",
+      "why_trending": "1-2 sentences why it's hot right now",
+      "search_volume": "High / Medium / Rising",
+      "competition": "Low / Medium / High",
+      "best_products": ["t-shirt", "hoodie", "mug"],
+      "target_audience": "Who buys this",
+      "design_ideas": ["specific design idea 1", "specific design idea 2"]
+    }
+  ]
+}
+\`\`\`
+
+Return ONLY the JSON, no other text.`
+      }]
+    });
+    
+    // Extract the JSON from response
+    const textBlock = response.content.find(c => c.type === 'text');
+    const text = textBlock?.text || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const trends = jsonMatch ? JSON.parse(jsonMatch[0]) : { trends: [] };
+    
+    res.json(trends);
+  } catch (err) {
+    console.error('Trend discovery error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== PRODUCT IDEATION (Module 2) ==========
+app.post('/api/trends/ideate', async (req, res) => {
+  try {
+    const { trend, productType = 't-shirt' } = req.body;
+    if (!trend) return res.status(400).json({ error: 'trend is required' });
+    
+    const claude = getClaudeClient();
+    const response = await claude.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 1500,
+      messages: [{
+        role: 'user',
+        content: `I want to create a PRINT-ON-DEMAND ${productType} based on this trend: "${trend}"
+
+Generate 3 product concepts. For each, return JSON in this format:
+
+\`\`\`json
+{
+  "concepts": [
+    {
+      "title": "Catchy product title (max 60 chars, SEO-friendly)",
+      "description": "Compelling product description (150 words) for the Shopify listing - include benefits, materials, who it's for",
+      "design_brief": "Detailed visual description of the design (what would be printed on it) - colors, style, composition, any text",
+      "tagline": "Short marketing tagline",
+      "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+      "price_usd": 29.99,
+      "tiktok_hook": "First 3-second TikTok video hook",
+      "tiktok_caption": "Full TikTok caption with emojis",
+      "tiktok_hashtags": "#hashtag1 #hashtag2 #hashtag3"
+    }
+  ]
+}
+\`\`\`
+
+Return ONLY the JSON.`
+      }]
+    });
+    
+    const text = response.content[0].text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const concepts = jsonMatch ? JSON.parse(jsonMatch[0]) : { concepts: [] };
+    res.json(concepts);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ========== INVENTORY ENDPOINTS ==========
-app.get('/api/inventory', async (req, res) => {
+// ========== PRINTIFY ENDPOINTS (Module 4) ==========
+app.get('/api/printify/shops', async (req, res) => {
+  try { res.json(await printifyRequest('shops.json')); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/printify/products', async (req, res) => {
   try {
-    const products = await shopifyRequest('products.json?limit=50');
-    const inventory = products.products.map(p => ({
-      id: p.id,
-      title: p.title,
-      variants: p.variants.map(v => ({
-        title: v.title,
-        sku: v.sku,
-        inventory_quantity: v.inventory_quantity,
-        price: v.price,
-      })),
+    const shopId = req.query.shop_id || PRINTIFY_SHOP_ID;
+    res.json(await printifyRequest(`shops/${shopId}/products.json`));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get popular print-on-demand product types (blueprints)
+app.get('/api/printify/blueprints', async (req, res) => {
+  try { 
+    const data = await printifyRequest('catalog/blueprints.json');
+    // Return top 20 most common ones
+    const popular = data.slice(0, 20).map(b => ({
+      id: b.id, title: b.title, brand: b.brand, model: b.model
     }));
-    res.json({ inventory });
+    res.json({ blueprints: popular });
+  }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Create a draft product on Printify (requires existing image already uploaded)
+// For full automation, image generation would need to be added
+app.post('/api/printify/create-draft', async (req, res) => {
+  try {
+    const shopId = req.query.shop_id || PRINTIFY_SHOP_ID;
+    const { title, description, blueprint_id, print_provider_id, image_id, tags } = req.body;
+    
+    // This is a simplified draft - real implementation needs variants and print areas
+    const product = {
+      title, description, blueprint_id, print_provider_id, tags,
+      variants: req.body.variants || [],
+      print_areas: req.body.print_areas || []
+    };
+    
+    res.json(await printifyRequest(`shops/${shopId}/products.json`, 'POST', product));
+  } catch (err) {
+    res.status(500).json({ error: err.message, hint: 'Image must be uploaded to Printify first' });
+  }
+});
+
+// ========== SHOPIFY AUTO-PUBLISH (Module 5) ==========
+app.post('/api/shopify/publish', async (req, res) => {
+  try {
+    const { title, body_html, vendor = 'UD Store', product_type, tags, variants } = req.body;
+    const product = {
+      product: {
+        title,
+        body_html: body_html || '',
+        vendor,
+        product_type: product_type || 'Apparel',
+        tags: Array.isArray(tags) ? tags.join(', ') : tags,
+        status: 'draft', // Start as draft for safety
+        variants: variants || [{ price: '29.99', inventory_quantity: 100 }]
+      }
+    };
+    res.json(await shopifyRequest('products.json', 'POST', product));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ========== CLAUDE AI CHAT ==========
+// ========== UNIFIED CHAT (uses store data + AI) ==========
 app.post('/api/chat', async (req, res) => {
-  if (!ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
-  }
-
   try {
     const { messages, includeStoreData = true } = req.body;
-    const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-
+    const claude = getClaudeClient();
+    
     let systemPrompt = `You are an AI agent managing the Shopify store "UD" (${SHOPIFY_STORE}) for owner Udo.
-You have access to live store data via API. Be concise, use markdown tables for data, bold key facts with **text**.
-For TikTok ads, give: hook, caption, hashtags, targeting tips.`;
+You have FULL ACCESS to: Shopify products/orders/customers, Printify catalog, web search for trends.
 
-    // Optionally fetch live store data to include in context
+CAPABILITIES YOU CAN OFFER:
+- Find trending products to sell (call /api/trends/discover)
+- Generate product concepts from trends
+- Create products on Printify and publish to Shopify
+- Generate TikTok ad copy
+
+When the user asks about trends/what to sell, suggest they use the "Find Trends" button which triggers a real web search.
+Be concise. Use markdown tables for data. Bold key facts with **text**.`;
+
     if (includeStoreData && SHOPIFY_ACCESS_TOKEN) {
       try {
         const [products, orders] = await Promise.all([
           shopifyRequest('products.json?limit=10'),
           shopifyRequest('orders.json?status=any&limit=10'),
         ]);
-        systemPrompt += `\n\nCURRENT PRODUCTS:\n${JSON.stringify(products.products.map(p => ({
+        systemPrompt += `\n\nLIVE PRODUCTS:\n${JSON.stringify(products.products.map(p => ({
           title: p.title, status: p.status, price: p.variants[0]?.price, stock: p.variants[0]?.inventory_quantity
         })))}\n\nRECENT ORDERS:\n${JSON.stringify(orders.orders.map(o => ({
-          name: o.name, customer: o.customer?.first_name + ' ' + o.customer?.last_name, total: o.total_price, status: o.fulfillment_status || 'unfulfilled'
+          name: o.name, total: o.total_price, status: o.fulfillment_status || 'unfulfilled'
         })))}`;
-      } catch (e) {
-        console.log('Could not fetch live data:', e.message);
-      }
+      } catch (e) { console.log('Store data fetch failed:', e.message); }
     }
 
-    const response = await anthropic.messages.create({
+    const response = await claude.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1024,
+      max_tokens: 1500,
       system: systemPrompt,
-      messages: messages,
+      messages,
     });
-
     res.json({ reply: response.content[0].text });
   } catch (err) {
-    console.error('Chat error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ========== TIKTOK ENDPOINTS (placeholder for now) ==========
-app.post('/api/tiktok/draft', (req, res) => {
-  // TikTok requires Marketing API approval which takes 2-4 weeks
-  // For now, this returns a draft ad ready to copy/paste
-  res.json({
-    status: 'draft',
-    message: 'TikTok Marketing API requires approval. Use the generated ad copy below to post manually.',
-    ad: req.body,
-  });
-});
-
 // ========== START SERVER ==========
 app.listen(PORT, () => {
-  console.log(`🚀 Shopify Agent Backend running on port ${PORT}`);
+  console.log(`🚀 Shopify Agent Backend v2 running on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
-  console.log(`🔑 Connected: ${!!SHOPIFY_ACCESS_TOKEN}`);
-  console.log(`\n👉 Visit ${APP_URL}/auth/shopify to connect your store`);
+  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | Printify: ${!!PRINTIFY_API_KEY}`);
 });
