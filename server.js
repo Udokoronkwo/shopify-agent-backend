@@ -212,47 +212,38 @@ app.post('/api/trends/ideate', async (req, res) => {
   try {
     const { trend, fulfillmentMethod = 'Print-on-Demand' } = req.body;
     if (!trend) return res.status(400).json({ error: 'trend required' });
+    
+    // Extract just essentials to keep token count low
+    const trendName = typeof trend === 'string' ? trend : (trend.name || 'unknown');
+    const trendDesc = typeof trend === 'object' ? `${trend.name}. ${trend.why_hot || ''}. Audience: ${trend.target_audience || 'general'}.` : trend;
+    
     const claude = getClaude();
     const r = await claude.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 2000,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 2500,
       messages: [{
         role: 'user',
-        content: `Trend: "${typeof trend === 'string' ? trend : JSON.stringify(trend)}"
-Fulfillment method: ${fulfillmentMethod}
+        content: `Trend: ${trendDesc}
+Fulfillment: ${fulfillmentMethod}
 
-Generate 3 SPECIFIC product concepts for this trend using ${fulfillmentMethod}. Return JSON:
+Generate exactly 3 product concepts. Reply with ONLY raw JSON (no markdown, no commentary, no code fences):
 
-\`\`\`json
-{
-  "concepts": [
-    {
-      "title": "SEO-friendly product title (max 60 chars)",
-      "description_html": "<p>Full Shopify HTML description with hooks, benefits, materials, target customer</p>",
-      "design_brief": "Visual description if POD (colors, typography, imagery)",
-      "supplier_search_terms": "Keywords to search on AliExpress/CJ if dropshipping",
-      "digital_format": "PDF/PNG/Video if digital",
-      "tagline": "Catchy one-liner",
-      "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-      "price_usd": 29.99,
-      "compare_at_price": 39.99,
-      "tiktok_hook": "First 3-second video hook",
-      "tiktok_caption": "Full caption with emojis (max 200 chars)",
-      "tiktok_hashtags": "#tag1 #tag2 #tag3 #tag4 #tag5",
-      "tiktok_video_idea": "Brief video concept (e.g. 'Show before/after' or 'POV trend')",
-      "fulfillment_steps": ["step 1 to actually create this", "step 2", "step 3"]
-    }
-  ]
-}
-\`\`\`
+{"concepts":[{"title":"product title under 60 chars","description_html":"<p>compelling Shopify product description</p>","tagline":"catchy one-liner","tags":["tag1","tag2","tag3","tag4","tag5"],"price_usd":29.99,"compare_at_price":39.99,"tiktok_hook":"3-second hook","tiktok_caption":"full caption with emojis","tiktok_hashtags":"#a #b #c","tiktok_video_idea":"video concept","fulfillment_steps":["step 1","step 2","step 3"]}]}
 
-Return ONLY the JSON.`
+Output ONLY the JSON object. Start with { and end with }.`
       }]
     });
     const fullText = getAllText(r.content);
     const data = extractJSON(fullText);
-    res.json(data || { concepts: [], error: 'Could not parse concepts' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    if (!data || !data.concepts || data.concepts.length === 0) {
+      console.error('Ideate parse failed. Response:', fullText.substring(0, 500));
+      return res.json({ concepts: [], error: 'Could not parse', debug: fullText.substring(0, 300) });
+    }
+    res.json(data);
+  } catch (e) {
+    console.error('Ideate error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ========== MODULE 3: SMART FULFILLMENT ROUTER ==========
@@ -363,7 +354,7 @@ Orders: ${JSON.stringify(orders.orders.map(o => ({ name: o.name, total: o.total_
     }
 
     const r = await claude.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1500,
       system, messages,
     });
