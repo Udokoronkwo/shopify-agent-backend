@@ -25,6 +25,123 @@ let SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
+// ========== TIKTOK CONFIG ==========
+const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
+const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
+let TIKTOK_ACCESS_TOKEN = process.env.TIKTOK_ACCESS_TOKEN || null;
+let TIKTOK_OPEN_ID = null;
+
+// ========== TIKTOK LOGIN FLOW ==========
+// Simple page where user clicks "Connect TikTok"
+app.get('/connect-tiktok', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>Connect TikTok - UD Store Agent</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font-family:system-ui,sans-serif;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;}
+    .card{background:#111;border:1px solid #333;border-radius:16px;padding:40px;max-width:480px;text-align:center;}
+    .logo{width:80px;height:80px;background:#96bf48;border-radius:20px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#000;font-size:36px;margin:0 auto 20px;}
+    h1{font-size:24px;margin-bottom:8px;}
+    p{color:#888;line-height:1.6;margin-bottom:24px;}
+    .btn{display:inline-block;background:linear-gradient(45deg,#FF0050,#00F2EA);color:#fff;padding:14px 28px;border-radius:30px;text-decoration:none;font-weight:700;font-size:16px;}
+    .status{margin-top:20px;padding:12px;border-radius:8px;font-size:13px;}
+    .status.connected{background:#0a3a0a;color:#7ed957;border:1px solid #2a6a2a;}
+    .status.disconnected{background:#3a1a1a;color:#f09595;border:1px solid #6a2a2a;}
+  </style></head>
+  <body><div class="card">
+    <div class="logo">U</div>
+    <h1>UD Store Agent</h1>
+    <p>Connect your TikTok Business account to enable AI-powered video posting for your store.</p>
+    <a href="/auth/tiktok" class="btn">🎵 Connect TikTok</a>
+    <div class="status ${TIKTOK_ACCESS_TOKEN ? 'connected' : 'disconnected'}">
+      ${TIKTOK_ACCESS_TOKEN ? '✅ TikTok account connected' : '⚠️ Not connected yet'}
+    </div>
+  </div></body></html>`);
+});
+
+// Step 1: Redirect to TikTok for authorization
+app.get('/auth/tiktok', (req, res) => {
+  const csrfState = Math.random().toString(36).substring(2);
+  const redirectUri = `${APP_URL}/auth/tiktok/callback`;
+  const scope = 'user.info.basic,video.publish,video.upload';
+  
+  const authUrl = `https://www.tiktok.com/v2/auth/authorize?` +
+    `client_key=${TIKTOK_CLIENT_KEY}&` +
+    `scope=${encodeURIComponent(scope)}&` +
+    `response_type=code&` +
+    `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+    `state=${csrfState}`;
+  
+  res.redirect(authUrl);
+});
+
+// Step 2: Handle callback from TikTok
+app.get('/auth/tiktok/callback', async (req, res) => {
+  const { code, error, error_description } = req.query;
+  
+  if (error) {
+    return res.send(`<html><body style="font-family:sans-serif;padding:40px;text-align:center;background:#1a0a0a;color:#f09595;">
+      <h1>❌ TikTok Auth Failed</h1>
+      <p>${error}: ${error_description || ''}</p>
+      <a href="/connect-tiktok" style="color:#fff;">← Try again</a>
+    </body></html>`);
+  }
+  
+  if (!code) return res.status(400).send('Missing authorization code');
+  
+  try {
+    const tokenResponse = await axios.post(
+      'https://open.tiktokapis.com/v2/oauth/token/',
+      new URLSearchParams({
+        client_key: TIKTOK_CLIENT_KEY,
+        client_secret: TIKTOK_CLIENT_SECRET,
+        code: code,
+        grant_type: 'authorization_code',
+        redirect_uri: `${APP_URL}/auth/tiktok/callback`
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    
+    TIKTOK_ACCESS_TOKEN = tokenResponse.data.access_token;
+    TIKTOK_OPEN_ID = tokenResponse.data.open_id;
+    console.log('✅ TikTok connected! Open ID:', TIKTOK_OPEN_ID);
+    
+    res.send(`<!DOCTYPE html><html><head><title>TikTok Connected!</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+      body{font-family:system-ui,sans-serif;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;}
+      .card{background:#0a3a0a;border:1px solid #2a6a2a;border-radius:16px;padding:40px;max-width:520px;text-align:center;}
+      h1{color:#7ed957;font-size:32px;margin-bottom:8px;}
+      .check{font-size:60px;margin-bottom:16px;}
+      p{color:#c8e8c0;line-height:1.6;}
+      code{display:block;background:#000;padding:12px;margin:16px 0;border-radius:8px;font-size:11px;word-break:break-all;color:#7ed957;}
+      .btn{display:inline-block;background:#96bf48;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin-top:16px;}
+    </style></head>
+    <body><div class="card">
+      <div class="check">✅</div>
+      <h1>TikTok Connected!</h1>
+      <p>Your UD Store Agent is now linked to your TikTok Business account.</p>
+      <p>Open ID:</p>
+      <code>${TIKTOK_OPEN_ID}</code>
+      <p>Save this token in Railway as <strong>TIKTOK_ACCESS_TOKEN</strong>:</p>
+      <code>${TIKTOK_ACCESS_TOKEN}</code>
+      <a href="/connect-tiktok" class="btn">← Back to Dashboard</a>
+    </div></body></html>`);
+  } catch (err) {
+    console.error('TikTok OAuth error:', err.response?.data || err.message);
+    res.status(500).send(`<html><body style="font-family:sans-serif;padding:40px;text-align:center;background:#1a0a0a;color:#f09595;">
+      <h1>❌ Token Exchange Failed</h1>
+      <pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>
+    </body></html>`);
+  }
+});
+
+// TikTok status endpoint
+app.get('/api/tiktok/status', (req, res) => {
+  res.json({
+    connected: !!TIKTOK_ACCESS_TOKEN,
+    open_id: TIKTOK_OPEN_ID
+  });
+});
 // ========== LEGAL PAGES ==========
 app.get('/terms', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Terms of Service - UD Store</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
