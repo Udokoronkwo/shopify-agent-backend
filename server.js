@@ -1,5 +1,5 @@
-// Shopify AI Agent Backend v2 - Full Pipeline
-// Modules: Trend Discovery → Product Ideas → Printify → Shopify → TikTok Ad Copy
+// Shopify AI Agent Backend v3 - Smart Fulfillment Router
+// Trend → Analyze → Auto-pick fulfillment (Printify | Dropship | Digital | Wholesale | Affiliate)
 
 const express = require('express');
 const cors = require('cors');
@@ -22,11 +22,10 @@ const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
 let SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 
-// ========== MIDDLEWARE ==========
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
-// ========== HEALTH CHECK ==========
+// ========== HEALTH ==========
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
@@ -34,31 +33,33 @@ app.get('/', (req, res) => {
     shopify_connected: !!SHOPIFY_ACCESS_TOKEN,
     claude_connected: !!ANTHROPIC_API_KEY,
     printify_connected: !!PRINTIFY_API_KEY,
-    message: 'Shopify Agent Backend v2 is running'
+    capabilities: {
+      trend_discovery: !!ANTHROPIC_API_KEY,
+      product_ideation: !!ANTHROPIC_API_KEY,
+      printify_create: !!PRINTIFY_API_KEY,
+      shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
+      tiktok_ad_copy: !!ANTHROPIC_API_KEY,
+    },
+    message: 'Shopify Agent v3 - Smart Fulfillment Router'
   });
 });
 
 // ========== SHOPIFY OAUTH ==========
 app.get('/auth/shopify', (req, res) => {
   const redirectUri = `${APP_URL}/auth/callback`;
-  const installUrl = `https://${SHOPIFY_STORE}/admin/oauth/authorize?` +
-    `client_id=${SHOPIFY_CLIENT_ID}&scope=${SHOPIFY_SCOPES}&redirect_uri=${redirectUri}`;
-  res.redirect(installUrl);
+  res.redirect(`https://${SHOPIFY_STORE}/admin/oauth/authorize?client_id=${SHOPIFY_CLIENT_ID}&scope=${SHOPIFY_SCOPES}&redirect_uri=${redirectUri}`);
 });
 
 app.get('/auth/callback', async (req, res) => {
   const { code, shop } = req.query;
-  if (!code) return res.status(400).send('Missing authorization code');
+  if (!code) return res.status(400).send('Missing code');
   try {
-    const tokenResponse = await axios.post(
-      `https://${shop || SHOPIFY_STORE}/admin/oauth/access_token`,
-      { client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, code }
-    );
-    SHOPIFY_ACCESS_TOKEN = tokenResponse.data.access_token;
-    console.log('✅ Shopify access token obtained!');
+    const r = await axios.post(`https://${shop || SHOPIFY_STORE}/admin/oauth/access_token`,
+      { client_id: SHOPIFY_CLIENT_ID, client_secret: SHOPIFY_CLIENT_SECRET, code });
+    SHOPIFY_ACCESS_TOKEN = r.data.access_token;
     res.send(`<html><body style="font-family:sans-serif;padding:40px;text-align:center;background:#0a150a;color:#96bf48;">
       <h1>✅ Shopify Connected!</h1>
-      <p>Save this token in Railway as <strong>SHOPIFY_ACCESS_TOKEN</strong>:</p>
+      <p>Save in Railway as SHOPIFY_ACCESS_TOKEN:</p>
       <code style="background:#1a2e1a;padding:12px;display:block;margin:20px;border-radius:8px;word-break:break-all;">${SHOPIFY_ACCESS_TOKEN}</code>
     </body></html>`);
   } catch (err) {
@@ -70,133 +71,143 @@ app.get('/auth/callback', async (req, res) => {
 async function shopifyRequest(endpoint, method = 'GET', data = null) {
   if (!SHOPIFY_ACCESS_TOKEN) throw new Error('Shopify not connected');
   const config = {
-    method,
-    url: `https://${SHOPIFY_STORE}/admin/api/2024-10/${endpoint}`,
+    method, url: `https://${SHOPIFY_STORE}/admin/api/2024-10/${endpoint}`,
     headers: { 'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN, 'Content-Type': 'application/json' },
   };
   if (data) config.data = data;
-  const r = await axios(config);
-  return r.data;
+  return (await axios(config)).data;
 }
 
 async function printifyRequest(endpoint, method = 'GET', data = null) {
   if (!PRINTIFY_API_KEY) throw new Error('Printify not connected');
   const config = {
-    method,
-    url: `https://api.printify.com/v1/${endpoint}`,
+    method, url: `https://api.printify.com/v1/${endpoint}`,
     headers: { 'Authorization': `Bearer ${PRINTIFY_API_KEY}`, 'Content-Type': 'application/json' },
   };
   if (data) config.data = data;
-  const r = await axios(config);
-  return r.data;
+  return (await axios(config)).data;
 }
 
-function getClaudeClient() {
-  if (!ANTHROPIC_API_KEY) throw new Error('Anthropic API key not configured');
+function getClaude() {
+  if (!ANTHROPIC_API_KEY) throw new Error('Anthropic not configured');
   return new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 }
 
-// ========== SHOPIFY ENDPOINTS ==========
+function extractJSON(text) {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try { return JSON.parse(match[0]); } catch { return null; }
+}
+
+// ========== SHOPIFY DATA ENDPOINTS ==========
 app.get('/api/products', async (req, res) => {
   try { res.json(await shopifyRequest('products.json?limit=50')); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
-
 app.get('/api/orders', async (req, res) => {
-  try { res.json(await shopifyRequest(`orders.json?status=any&limit=50`)); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try { res.json(await shopifyRequest('orders.json?status=any&limit=50')); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
-
 app.get('/api/customers', async (req, res) => {
   try { res.json(await shopifyRequest('customers.json?limit=50')); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== TREND DISCOVERY (Module 1) ==========
+// ========== MODULE 1: TREND DISCOVERY ==========
 app.post('/api/trends/discover', async (req, res) => {
   try {
-    const { niche = 'all niches', count = 5 } = req.body;
-    const claude = getClaudeClient();
-    
-    const response = await claude.messages.create({
+    const { count = 5, focus = 'all niches' } = req.body;
+    const claude = getClaude();
+    const r = await claude.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 2048,
+      max_tokens: 2500,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       messages: [{
         role: 'user',
-        content: `Search the web for the TOP ${count} TRENDING product categories or items RIGHT NOW in ${niche} that would work great for print-on-demand (t-shirts, hoodies, mugs, posters, hats).
+        content: `Search the web RIGHT NOW for the TOP ${count} TRENDING product opportunities in ${focus} that someone could sell online TODAY.
 
-Use web search to look up:
-- Current TikTok trending hashtags & viral content
+Use web search to check:
+- TikTok viral trends and hashtags
 - Google Trends rising searches
-- Etsy bestsellers right now  
+- Etsy bestsellers (last 30 days)
 - Amazon Movers & Shakers
-- Any hot cultural moments / memes / news driving merch sales
+- Reddit communities discussing buying decisions
+- Pop culture moments / news driving demand
 
-For each trending item, return JSON in this EXACT format:
+For each trend, return JSON in this EXACT format:
 \`\`\`json
 {
   "trends": [
     {
-      "name": "Trend name (e.g. 'Pickleball Apparel')",
-      "category": "Sports / Pop Culture / Fashion / etc",
-      "why_trending": "1-2 sentences why it's hot right now",
-      "search_volume": "High / Medium / Rising",
-      "competition": "Low / Medium / High",
-      "best_products": ["t-shirt", "hoodie", "mug"],
-      "target_audience": "Who buys this",
-      "design_ideas": ["specific design idea 1", "specific design idea 2"]
+      "name": "Trend name",
+      "category": "Sports | Fashion | Tech | Beauty | Home | Pop Culture | Hobbies",
+      "why_hot": "1-2 sentences why it is trending RIGHT NOW",
+      "demand_level": "Exploding | High | Rising",
+      "competition": "Low | Medium | High",
+      "best_fulfillment": "Print-on-Demand | Dropshipping | Digital | Wholesale | Affiliate",
+      "fulfillment_reason": "Why this method is best for this trend",
+      "product_examples": ["specific product 1", "product 2", "product 3"],
+      "target_audience": "demographic + interests",
+      "estimated_margin": "Low | Medium | High",
+      "urgency": "Buy NOW | Plan Soon | Long-term"
     }
   ]
 }
 \`\`\`
 
-Return ONLY the JSON, no other text.`
+Pick the BEST FULFILLMENT METHOD for each trend:
+- "Print-on-Demand" - if it's a design/slogan/art opportunity (tees, mugs, posters, hats)
+- "Dropshipping" - if it's a physical product available from suppliers (AliExpress, CJ)
+- "Digital" - if it could be a download (templates, presets, ebooks, courses, wallpapers)
+- "Wholesale" - if you should buy bulk and resell (high margin, niche)
+- "Affiliate" - if the product is hard to source but easy to promote (Amazon links)
+
+Return ONLY the JSON.`
       }]
     });
-    
-    // Extract the JSON from response
-    const textBlock = response.content.find(c => c.type === 'text');
-    const text = textBlock?.text || '';
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const trends = jsonMatch ? JSON.parse(jsonMatch[0]) : { trends: [] };
-    
-    res.json(trends);
+    const textBlock = r.content.find(c => c.type === 'text');
+    const data = extractJSON(textBlock?.text || '');
+    res.json(data || { trends: [], error: 'Parse failed' });
   } catch (err) {
-    console.error('Trend discovery error:', err);
+    console.error('Trend error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ========== PRODUCT IDEATION (Module 2) ==========
+// ========== MODULE 2: PRODUCT IDEATION ==========
 app.post('/api/trends/ideate', async (req, res) => {
   try {
-    const { trend, productType = 't-shirt' } = req.body;
-    if (!trend) return res.status(400).json({ error: 'trend is required' });
-    
-    const claude = getClaudeClient();
-    const response = await claude.messages.create({
+    const { trend, fulfillmentMethod = 'Print-on-Demand' } = req.body;
+    if (!trend) return res.status(400).json({ error: 'trend required' });
+    const claude = getClaude();
+    const r = await claude.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1500,
+      max_tokens: 2000,
       messages: [{
         role: 'user',
-        content: `I want to create a PRINT-ON-DEMAND ${productType} based on this trend: "${trend}"
+        content: `Trend: "${typeof trend === 'string' ? trend : JSON.stringify(trend)}"
+Fulfillment method: ${fulfillmentMethod}
 
-Generate 3 product concepts. For each, return JSON in this format:
+Generate 3 SPECIFIC product concepts for this trend using ${fulfillmentMethod}. Return JSON:
 
 \`\`\`json
 {
   "concepts": [
     {
-      "title": "Catchy product title (max 60 chars, SEO-friendly)",
-      "description": "Compelling product description (150 words) for the Shopify listing - include benefits, materials, who it's for",
-      "design_brief": "Detailed visual description of the design (what would be printed on it) - colors, style, composition, any text",
-      "tagline": "Short marketing tagline",
+      "title": "SEO-friendly product title (max 60 chars)",
+      "description_html": "<p>Full Shopify HTML description with hooks, benefits, materials, target customer</p>",
+      "design_brief": "Visual description if POD (colors, typography, imagery)",
+      "supplier_search_terms": "Keywords to search on AliExpress/CJ if dropshipping",
+      "digital_format": "PDF/PNG/Video if digital",
+      "tagline": "Catchy one-liner",
       "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
       "price_usd": 29.99,
-      "tiktok_hook": "First 3-second TikTok video hook",
-      "tiktok_caption": "Full TikTok caption with emojis",
-      "tiktok_hashtags": "#hashtag1 #hashtag2 #hashtag3"
+      "compare_at_price": 39.99,
+      "tiktok_hook": "First 3-second video hook",
+      "tiktok_caption": "Full caption with emojis (max 200 chars)",
+      "tiktok_hashtags": "#tag1 #tag2 #tag3 #tag4 #tag5",
+      "tiktok_video_idea": "Brief video concept (e.g. 'Show before/after' or 'POV trend')",
+      "fulfillment_steps": ["step 1 to actually create this", "step 2", "step 3"]
     }
   ]
 }
@@ -205,100 +216,106 @@ Generate 3 product concepts. For each, return JSON in this format:
 Return ONLY the JSON.`
       }]
     });
-    
-    const text = response.content[0].text;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const concepts = jsonMatch ? JSON.parse(jsonMatch[0]) : { concepts: [] };
-    res.json(concepts);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const data = extractJSON(r.content[0].text);
+    res.json(data || { concepts: [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== PRINTIFY ENDPOINTS (Module 4) ==========
+// ========== MODULE 3: SMART FULFILLMENT ROUTER ==========
+app.post('/api/fulfillment/route', async (req, res) => {
+  try {
+    const { concept } = req.body;
+    if (!concept) return res.status(400).json({ error: 'concept required' });
+    
+    const method = concept.fulfillment_method || 'Print-on-Demand';
+    const result = { method, concept, actions: [] };
+    
+    if (method === 'Print-on-Demand' && PRINTIFY_API_KEY) {
+      result.actions.push({ type: 'manual', label: 'Generate design image (using AI image gen of your choice)' });
+      result.actions.push({ type: 'auto', label: 'Upload design to Printify', endpoint: '/api/printify/upload-image' });
+      result.actions.push({ type: 'auto', label: 'Create Printify product', endpoint: '/api/printify/create' });
+      result.actions.push({ type: 'auto', label: 'Publish to Shopify', endpoint: '/api/shopify/publish' });
+    } else if (method === 'Digital') {
+      result.actions.push({ type: 'manual', label: 'Create your digital file (PDF, PNG, etc.)' });
+      result.actions.push({ type: 'auto', label: 'Create Shopify product as digital download', endpoint: '/api/shopify/publish' });
+      result.actions.push({ type: 'manual', label: 'Install Shopify Digital Downloads app to enable file delivery' });
+    } else if (method === 'Dropshipping') {
+      result.actions.push({ type: 'manual', label: `Search supplier sites with: ${concept.supplier_search_terms || concept.title}` });
+      result.actions.push({ type: 'manual', label: 'Connect a dropshipping app: DSers, Spocket, or CJ Dropshipping' });
+      result.actions.push({ type: 'auto', label: 'Create Shopify product listing', endpoint: '/api/shopify/publish' });
+    } else if (method === 'Wholesale') {
+      result.actions.push({ type: 'manual', label: 'Find wholesale supplier (Faire, Alibaba, trade shows)' });
+      result.actions.push({ type: 'manual', label: 'Order inventory sample first' });
+      result.actions.push({ type: 'auto', label: 'Create Shopify product listing', endpoint: '/api/shopify/publish' });
+    } else if (method === 'Affiliate') {
+      result.actions.push({ type: 'manual', label: 'Sign up for Amazon Associates / affiliate network' });
+      result.actions.push({ type: 'manual', label: 'Create blog post/landing page promoting product' });
+    }
+    
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ========== MODULE 4: PRINTIFY ==========
 app.get('/api/printify/shops', async (req, res) => {
   try { res.json(await printifyRequest('shops.json')); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/printify/products', async (req, res) => {
   try {
     const shopId = req.query.shop_id || PRINTIFY_SHOP_ID;
     res.json(await printifyRequest(`shops/${shopId}/products.json`));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Get popular print-on-demand product types (blueprints)
-app.get('/api/printify/blueprints', async (req, res) => {
-  try { 
-    const data = await printifyRequest('catalog/blueprints.json');
-    // Return top 20 most common ones
-    const popular = data.slice(0, 20).map(b => ({
-      id: b.id, title: b.title, brand: b.brand, model: b.model
-    }));
-    res.json({ blueprints: popular });
-  }
-  catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// Create a draft product on Printify (requires existing image already uploaded)
-// For full automation, image generation would need to be added
-app.post('/api/printify/create-draft', async (req, res) => {
+app.post('/api/printify/upload-image', async (req, res) => {
   try {
-    const shopId = req.query.shop_id || PRINTIFY_SHOP_ID;
-    const { title, description, blueprint_id, print_provider_id, image_id, tags } = req.body;
-    
-    // This is a simplified draft - real implementation needs variants and print areas
-    const product = {
-      title, description, blueprint_id, print_provider_id, tags,
-      variants: req.body.variants || [],
-      print_areas: req.body.print_areas || []
-    };
-    
-    res.json(await printifyRequest(`shops/${shopId}/products.json`, 'POST', product));
-  } catch (err) {
-    res.status(500).json({ error: err.message, hint: 'Image must be uploaded to Printify first' });
-  }
+    // Expects { file_name, contents } where contents is base64 OR { url } for url upload
+    res.json(await printifyRequest('uploads/images.json', 'POST', req.body));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== SHOPIFY AUTO-PUBLISH (Module 5) ==========
+// ========== MODULE 5: SHOPIFY PUBLISH ==========
 app.post('/api/shopify/publish', async (req, res) => {
   try {
-    const { title, body_html, vendor = 'UD Store', product_type, tags, variants } = req.body;
+    const { title, description_html, body_html, vendor = 'UD Store', product_type, tags, price, compare_at_price, status = 'draft', is_digital = false } = req.body;
+    
+    const variant = { 
+      price: String(price || '29.99'),
+      inventory_quantity: is_digital ? 999 : 100,
+      requires_shipping: !is_digital,
+      taxable: true,
+    };
+    if (compare_at_price) variant.compare_at_price = String(compare_at_price);
+    
     const product = {
       product: {
         title,
-        body_html: body_html || '',
+        body_html: description_html || body_html || '',
         vendor,
-        product_type: product_type || 'Apparel',
-        tags: Array.isArray(tags) ? tags.join(', ') : tags,
-        status: 'draft', // Start as draft for safety
-        variants: variants || [{ price: '29.99', inventory_quantity: 100 }]
+        product_type: product_type || (is_digital ? 'Digital' : 'Apparel'),
+        tags: Array.isArray(tags) ? tags.join(', ') : (tags || ''),
+        status,
+        variants: [variant]
       }
     };
     res.json(await shopifyRequest('products.json', 'POST', product));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== UNIFIED CHAT (uses store data + AI) ==========
+// ========== UNIFIED CHAT ==========
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, includeStoreData = true } = req.body;
-    const claude = getClaudeClient();
+    const claude = getClaude();
     
-    let systemPrompt = `You are an AI agent managing the Shopify store "UD" (${SHOPIFY_STORE}) for owner Udo.
-You have FULL ACCESS to: Shopify products/orders/customers, Printify catalog, web search for trends.
+    let system = `You are an expert AI agent managing the Shopify store "UD" (${SHOPIFY_STORE}) for owner Udo.
+You can help find trending products and create products via multiple fulfillment methods (Print-on-Demand, Dropshipping, Digital, Wholesale, Affiliate).
 
-CAPABILITIES YOU CAN OFFER:
-- Find trending products to sell (call /api/trends/discover)
-- Generate product concepts from trends
-- Create products on Printify and publish to Shopify
-- Generate TikTok ad copy
-
-When the user asks about trends/what to sell, suggest they use the "Find Trends" button which triggers a real web search.
-Be concise. Use markdown tables for data. Bold key facts with **text**.`;
+When users ask about trends or what to sell, suggest they click "Find Trends" which triggers a real web search.
+When asked to create a product, walk them through the steps.
+Be concise. Use markdown tables. Bold key facts.`;
 
     if (includeStoreData && SHOPIFY_ACCESS_TOKEN) {
       try {
@@ -306,29 +323,22 @@ Be concise. Use markdown tables for data. Bold key facts with **text**.`;
           shopifyRequest('products.json?limit=10'),
           shopifyRequest('orders.json?status=any&limit=10'),
         ]);
-        systemPrompt += `\n\nLIVE PRODUCTS:\n${JSON.stringify(products.products.map(p => ({
-          title: p.title, status: p.status, price: p.variants[0]?.price, stock: p.variants[0]?.inventory_quantity
-        })))}\n\nRECENT ORDERS:\n${JSON.stringify(orders.orders.map(o => ({
-          name: o.name, total: o.total_price, status: o.fulfillment_status || 'unfulfilled'
-        })))}`;
-      } catch (e) { console.log('Store data fetch failed:', e.message); }
+        system += `\n\nLIVE STORE:\nProducts: ${JSON.stringify(products.products.map(p => ({ title: p.title, status: p.status, price: p.variants[0]?.price })))}
+Orders: ${JSON.stringify(orders.orders.map(o => ({ name: o.name, total: o.total_price })))}`;
+      } catch (e) {}
     }
 
-    const response = await claude.messages.create({
+    const r = await claude.messages.create({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1500,
-      system: systemPrompt,
-      messages,
+      system, messages,
     });
-    res.json({ reply: response.content[0].text });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    res.json({ reply: r.content[0].text });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== START SERVER ==========
 app.listen(PORT, () => {
-  console.log(`🚀 Shopify Agent Backend v2 running on port ${PORT}`);
+  console.log(`🚀 Shopify Agent v3 (Smart Router) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
   console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | Printify: ${!!PRINTIFY_API_KEY}`);
 });
