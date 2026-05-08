@@ -38,7 +38,7 @@ app.get('/terms', (req, res) => {
   <h2>3. Limitation of Liability</h2>
   <p>This service is provided "as is" without warranties. We are not liable for any damages from your use of the service.</p>
   <h2>4. Contact</h2>
-  <p>Email: udokoronkwo21@gmail.com</p>
+  <p>Email: okoronkwoudochukwu742@gmail.com</p>
   <p><em>Last updated: ${new Date().toLocaleDateString()}</em></p>
   </body></html>`);
 });
@@ -57,7 +57,7 @@ app.get('/privacy', (req, res) => {
   <h2>4. Your Rights</h2>
   <p>You can request data deletion at any time by contacting us.</p>
   <h2>5. Contact</h2>
-  <p>Email: udokoronkwo21@gmail.com</p>
+  <p>Email: okoronkwoudochukwu742@gmail.com</p>
   <p><em>Last updated: ${new Date().toLocaleDateString()}</em></p>
   </body></html>`);
 });
