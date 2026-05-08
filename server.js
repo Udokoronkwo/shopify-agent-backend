@@ -25,6 +25,42 @@ let SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
+// ========== LEGAL PAGES ==========
+app.get('/terms', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>Terms of Service - UD Store</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+  <body style="font-family:sans-serif;max-width:700px;margin:40px auto;padding:20px;line-height:1.6;">
+  <h1>Terms of Service</h1>
+  <p><strong>UD Store</strong> ("we", "our", "us") operates this AI agent service. By using our service, you agree to these terms.</p>
+  <h2>1. Service</h2>
+  <p>This service is an AI-powered agent that assists with managing the UD Store Shopify store and posting marketing content.</p>
+  <h2>2. Acceptable Use</h2>
+  <p>You agree to use this service lawfully and not engage in fraudulent or harmful activity.</p>
+  <h2>3. Limitation of Liability</h2>
+  <p>This service is provided "as is" without warranties. We are not liable for any damages from your use of the service.</p>
+  <h2>4. Contact</h2>
+  <p>Email: udokoronkwo21@gmail.com</p>
+  <p><em>Last updated: ${new Date().toLocaleDateString()}</em></p>
+  </body></html>`);
+});
+
+app.get('/privacy', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>Privacy Policy - UD Store</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+  <body style="font-family:sans-serif;max-width:700px;margin:40px auto;padding:20px;line-height:1.6;">
+  <h1>Privacy Policy</h1>
+  <p><strong>UD Store</strong> respects your privacy. This policy explains how we handle data.</p>
+  <h2>1. Data We Collect</h2>
+  <p>We collect Shopify store data (products, orders) and TikTok content metadata only for the purpose of managing your store.</p>
+  <h2>2. How We Use It</h2>
+  <p>Data is used solely to power the AI agent's features. We do not sell or share your data.</p>
+  <h2>3. Storage</h2>
+  <p>Data is stored securely on Railway and Anthropic infrastructure.</p>
+  <h2>4. Your Rights</h2>
+  <p>You can request data deletion at any time by contacting us.</p>
+  <h2>5. Contact</h2>
+  <p>Email: udokoronkwo21@gmail.com</p>
+  <p><em>Last updated: ${new Date().toLocaleDateString()}</em></p>
+  </body></html>`);
+});
 // ========== TIKTOK URL VERIFICATION ==========
 app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
   res.type('text/plain');
