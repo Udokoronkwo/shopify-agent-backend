@@ -25,7 +25,12 @@ let SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
-// ========== HEALTH ==========
+// ========== TIKTOK URL VERIFICATION ==========
+app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
+  res.type('text/plain');
+  res.send('tiktok-developers-site-verification=CiTHepTjzowws82Q55YMYSvJscv4JfET');
+});
+// ========== HEALTH CHECK ==========
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
