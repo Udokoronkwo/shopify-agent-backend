@@ -94,9 +94,38 @@ function getClaude() {
 }
 
 function extractJSON(text) {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try { return JSON.parse(match[0]); } catch { return null; }
+  if (!text) return null;
+  
+  // Try 1: Look for JSON inside ```json ... ``` code blocks
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    try { return JSON.parse(codeBlockMatch[1].trim()); } catch (e) {}
+  }
+  
+  // Try 2: Find the largest valid JSON object in the text
+  const matches = [...text.matchAll(/\{[\s\S]*?\}/g)];
+  if (matches.length > 0) {
+    // Sort by length, try largest first
+    const sorted = matches.map(m => m[0]).sort((a, b) => b.length - a.length);
+    for (const candidate of sorted) {
+      try { return JSON.parse(candidate); } catch (e) {}
+    }
+  }
+  
+  // Try 3: Find from first { to last }
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch (e) {}
+  }
+  
+  return null;
+}
+
+// Helper to combine all text blocks from Claude's response
+function getAllText(content) {
+  if (!Array.isArray(content)) return '';
+  return content.filter(c => c.type === 'text').map(c => c.text).join('\n');
 }
 
 // ========== SHOPIFY DATA ENDPOINTS ==========
@@ -124,9 +153,9 @@ app.post('/api/trends/discover', async (req, res) => {
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       messages: [{
         role: 'user',
-        content: `Search the web RIGHT NOW for the TOP ${count} TRENDING product opportunities in ${focus} that someone could sell online TODAY.
+        content: `You are a trend research bot. Use web search to find the TOP ${count} TRENDING product opportunities in ${focus} that someone could sell online TODAY.
 
-Use web search to check:
+Search the web for:
 - TikTok viral trends and hashtags
 - Google Trends rising searches
 - Etsy bestsellers (last 30 days)
@@ -134,40 +163,44 @@ Use web search to check:
 - Reddit communities discussing buying decisions
 - Pop culture moments / news driving demand
 
-For each trend, return JSON in this EXACT format:
-\`\`\`json
+After researching, you MUST respond with ONLY a single JSON object — no preamble, no explanation, no markdown formatting, no code fences. Just raw JSON starting with { and ending with }.
+
+The JSON structure MUST be:
 {
   "trends": [
     {
       "name": "Trend name",
-      "category": "Sports | Fashion | Tech | Beauty | Home | Pop Culture | Hobbies",
+      "category": "Sports OR Fashion OR Tech OR Beauty OR Home OR Pop Culture OR Hobbies",
       "why_hot": "1-2 sentences why it is trending RIGHT NOW",
-      "demand_level": "Exploding | High | Rising",
-      "competition": "Low | Medium | High",
-      "best_fulfillment": "Print-on-Demand | Dropshipping | Digital | Wholesale | Affiliate",
+      "demand_level": "Exploding OR High OR Rising",
+      "competition": "Low OR Medium OR High",
+      "best_fulfillment": "Print-on-Demand OR Dropshipping OR Digital OR Wholesale OR Affiliate",
       "fulfillment_reason": "Why this method is best for this trend",
-      "product_examples": ["specific product 1", "product 2", "product 3"],
+      "product_examples": ["product 1", "product 2", "product 3"],
       "target_audience": "demographic + interests",
-      "estimated_margin": "Low | Medium | High",
-      "urgency": "Buy NOW | Plan Soon | Long-term"
+      "estimated_margin": "Low OR Medium OR High",
+      "urgency": "Buy NOW OR Plan Soon OR Long-term"
     }
   ]
 }
-\`\`\`
 
 Pick the BEST FULFILLMENT METHOD for each trend:
-- "Print-on-Demand" - if it's a design/slogan/art opportunity (tees, mugs, posters, hats)
-- "Dropshipping" - if it's a physical product available from suppliers (AliExpress, CJ)
-- "Digital" - if it could be a download (templates, presets, ebooks, courses, wallpapers)
-- "Wholesale" - if you should buy bulk and resell (high margin, niche)
-- "Affiliate" - if the product is hard to source but easy to promote (Amazon links)
+- "Print-on-Demand" - design/slogan/art (tees, mugs, posters)
+- "Dropshipping" - physical product available from suppliers
+- "Digital" - downloadable (templates, presets, ebooks, wallpapers)
+- "Wholesale" - buy bulk and resell
+- "Affiliate" - just promote with affiliate links
 
-Return ONLY the JSON.`
+CRITICAL: Output ONLY the JSON object. Nothing else.`
       }]
     });
-    const textBlock = r.content.find(c => c.type === 'text');
-    const data = extractJSON(textBlock?.text || '');
-    res.json(data || { trends: [], error: 'Parse failed' });
+    const fullText = getAllText(r.content);
+    const data = extractJSON(fullText);
+    if (!data || !data.trends) {
+      console.error('Trend parse failed. Response:', fullText.substring(0, 500));
+      return res.json({ trends: [], error: 'Could not parse trends', debug: fullText.substring(0, 300) });
+    }
+    res.json(data);
   } catch (err) {
     console.error('Trend error:', err);
     res.status(500).json({ error: err.message });
@@ -216,8 +249,9 @@ Generate 3 SPECIFIC product concepts for this trend using ${fulfillmentMethod}. 
 Return ONLY the JSON.`
       }]
     });
-    const data = extractJSON(r.content[0].text);
-    res.json(data || { concepts: [] });
+    const fullText = getAllText(r.content);
+    const data = extractJSON(fullText);
+    res.json(data || { concepts: [], error: 'Could not parse concepts' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
