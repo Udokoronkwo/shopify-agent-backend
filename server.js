@@ -1,5 +1,6 @@
-// Shopify AI Agent Backend v6 - Faith-Based Empire
-// Theme: Biblical / Scripture Graphics
+// Shopify AI Agent Backend v7 - Faith-Based Empire (Bestseller Aesthetic)
+// Theme: Christian Wall Art targeting proven Etsy bestseller styles
+// Style: Classical oil painting / Renaissance / Hofmann-inspired religious art
 // Pillar 1: Scripture Wall Art (POD)
 // Pillar 2: Digital Faith Products (wallpapers, devotionals)
 // Pillar 3: Trending Dropshipping (faith-aligned)
@@ -163,8 +164,9 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v6 - Faith-Based Empire',
-    theme: 'Biblical / Scripture Graphics',
+    version: 'v7 - Faith-Based Empire (Bestseller Aesthetic)',
+    theme: 'Christian Wall Art - Classical Oil Painting Style',
+    art_style: 'Hofmann / Caravaggio / Renaissance religious art',
     store: SHOPIFY_STORE,
     pillars: {
       scripture_wall_art: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
@@ -191,7 +193,7 @@ app.get('/', (req, res) => {
       shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
       tiktok_post: !!TIKTOK_ACCESS_TOKEN,
     },
-    message: 'UD Store Agent v6 - Faith-Based Empire (Scripture Wall Art + Digital Faith + Dropshipping)'
+    message: 'UD Store Agent v7 - Faith-Based Empire targeting bestseller Christian wall art aesthetic'
   });
 });
 
@@ -325,30 +327,36 @@ const SCRIPTURE_LIBRARY = {
   ],
 };
 
-// Rotating aesthetic styles for variety
+// PROVEN BESTSELLER aesthetics from Etsy 2026 Christian wall art research
+// These are the styles ACTUALLY converting in the Christian art market
 const FAITH_AESTHETICS = [
-  'modern minimalist',
-  'vintage rustic with wood texture',
-  'royal golden illuminated manuscript',
-  'bold contemporary graphic',
-  'soft watercolor pastel',
-  'elegant typographic',
-  'dramatic stained glass',
-  'cinematic divine light',
+  'classical oil painting in the style of Heinrich Hofmann',
+  'Renaissance religious oil painting, Caravaggio-inspired with dramatic chiaroscuro',
+  'soft pastoral oil painting with neutral beige and cream tones',
+  'vintage farmhouse Christian art with weathered warm textures',
+  'devotional watercolor painting with gentle soft tones',
+  'Baroque religious art with rich golden tones and dramatic lighting',
+  'modern minimalist Christian fine art with soft neutral palette',
+  'classical European religious painting with timeless elegance',
 ];
 
-// Rotating imagery for variety
+// PROVEN BESTSELLER subjects - these are the actual top-converting concepts on Etsy
 const FAITH_IMAGERY = [
-  'simple cross silhouette',
-  'praying hands',
-  'dove of peace with olive branch',
-  'majestic mountains at sunrise',
-  'rays of divine light breaking through clouds',
-  'open holy bible with soft glow',
-  'gentle lamb in pastoral setting',
-  'shepherd staff and crown of thorns',
-  'flowing river of life',
-  'sun rising over hills',
+  'Jesus Christ portrait, gentle face with kind eyes, classical religious painting',
+  'Good Shepherd Jesus carrying a lamb on his shoulders, pastoral scene',
+  'Jesus walking on water with disciples in boat, dramatic ocean waves',
+  'Jesus praying in the Garden of Gethsemane at night, soft lantern light',
+  'Hands of Jesus reaching out with light, healing gesture',
+  'crown of thorns with golden rays of divine light breaking through',
+  'Jesus walking alongside a believer in a peaceful field',
+  'Jesus calming the storm, raised hand commanding waves',
+  'Holy dove descending with rays of light, baptism scene',
+  'cross silhouetted against dramatic sunrise or sunset sky',
+  'Jesus knocking at a wooden door, classical religious art',
+  'Jesus feeding the multitude, breaking bread with crowds',
+  'open Bible with golden light streaming from pages',
+  'Jesus blessing children, gentle pastoral scene',
+  'Jesus at the well with woman, soft watercolor scene',
 ];
 
 // Pick a random scripture from a theme
@@ -372,31 +380,31 @@ function pickImagery() {
   return FAITH_IMAGERY[Math.floor(Math.random() * FAITH_IMAGERY.length)];
 }
 
-// Build a faith-based art prompt
+// Build a faith-based art prompt targeting Etsy bestseller aesthetic
 function buildFaithPrompt(opts) {
   const {
-    theme = 'random',
     aesthetic = pickAesthetic(),
     imagery = pickImagery(),
     custom_subject = null,
-    text_mode = 'imagery_only', // imagery_only OR with_verse
-    scripture = null, // pre-picked or auto
+    text_mode = 'imagery_only',
+    scripture = null,
   } = opts;
 
-  const subjectPart = custom_subject
-    ? custom_subject
-    : `${imagery}`;
-
+  const subjectPart = custom_subject || imagery;
   const aestheticPart = aesthetic;
 
   let textInstruction;
   if (text_mode === 'with_verse' && scripture) {
     textInstruction = `Include the text "${scripture.verse.substring(0, 80)}" in elegant typography integrated into the design. The reference "${scripture.reference}" should appear in smaller text below.`;
   } else {
-    textInstruction = `NO TEXT NO WORDS NO LETTERS in the image. Pure visual artwork only - text will be added separately.`;
+    textInstruction = `NO TEXT NO WORDS NO LETTERS in the image. Pure visual artwork only - text will be added separately in Printify.`;
   }
 
-  return `Beautiful Christian faith-based wall art: ${subjectPart}. Style: ${aestheticPart}. Spiritual, uplifting, reverent atmosphere. Premium quality artwork suitable for home decor. ${textInstruction} Centered composition, gallery-worthy aesthetic, peaceful and meaningful.`;
+  // Targeted prompt that mimics top-selling Etsy Christian wall art:
+  // - Oil painting / classical religious art aesthetic
+  // - Rich emotional depth
+  // - Gallery-quality finish
+  return `A reverent Christian devotional wall art piece: ${subjectPart}. Rendered in ${aestheticPart}. The work should feel like a museum-quality religious painting suitable for Christian home decor — soft warm lighting, rich emotional depth, peaceful and worshipful atmosphere, traditional religious art aesthetic that resonates with believers. Painterly brushstrokes visible, NOT digital illustration, NOT cartoon, NOT geometric, NOT vector art. Think Heinrich Hofmann, Carl Bloch, classical European religious masters. Premium gallery finish, high emotional resonance, the kind of art a faithful Christian would proudly display in their home or church. ${textInstruction} Centered composition with rule-of-thirds balance.`;
 }
 
 // Helper: Generate a single DALL-E image
@@ -1500,9 +1508,10 @@ Output ONLY the JSON object.`
 
 // ============================================================
 app.listen(PORT, () => {
-  console.log(`🚀 UD Store Agent v6 (Faith-Based Empire) on port ${PORT}`);
+  console.log(`🚀 UD Store Agent v7 (Faith-Based Empire - Bestseller Aesthetic) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
-  console.log(`🙏 Theme: Biblical / Scripture Graphics`);
+  console.log(`🙏 Theme: Christian Wall Art - Classical Oil Painting Style`);
+  console.log(`🎨 Targeting: Hofmann / Caravaggio / Renaissance religious art aesthetic`);
   console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} (shop: ${PRINTIFY_SHOP_ID || 'none'}) | TikTok: ${!!TIKTOK_ACCESS_TOKEN}`);
   console.log(`🏛️ Pillars: Scripture Wall Art ✓ Digital Faith ✓ Dropshipping ✓ Apparel ✓`);
 });
