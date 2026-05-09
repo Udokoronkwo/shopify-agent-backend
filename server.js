@@ -1,5 +1,5 @@
-// Shopify AI Agent Backend v3 - Smart Fulfillment Router
-// Trend → Analyze → Auto-pick fulfillment (Printify | Dropship | Digital | Wholesale | Affiliate)
+// Shopify AI Agent Backend v4 - Full POD Pipeline
+// Trend → Design → Printify → Shopify → TikTok
 
 const express = require('express');
 const cors = require('cors');
@@ -33,7 +33,6 @@ let TIKTOK_ACCESS_TOKEN = process.env.TIKTOK_ACCESS_TOKEN || null;
 let TIKTOK_OPEN_ID = null;
 
 // ========== TIKTOK LOGIN FLOW ==========
-// Simple page where user clicks "Connect TikTok"
 app.get('/connect-tiktok', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Connect TikTok - UD Store Agent</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -59,26 +58,21 @@ app.get('/connect-tiktok', (req, res) => {
   </div></body></html>`);
 });
 
-// Step 1: Redirect to TikTok for authorization
 app.get('/auth/tiktok', (req, res) => {
   const csrfState = Math.random().toString(36).substring(2);
   const redirectUri = `${APP_URL}/auth/tiktok/callback`;
   const scope = 'user.info.basic,video.publish,video.upload';
-  
   const authUrl = `https://www.tiktok.com/v2/auth/authorize?` +
     `client_key=${TIKTOK_CLIENT_KEY}&` +
     `scope=${encodeURIComponent(scope)}&` +
     `response_type=code&` +
     `redirect_uri=${encodeURIComponent(redirectUri)}&` +
     `state=${csrfState}`;
-  
   res.redirect(authUrl);
 });
 
-// Step 2: Handle callback from TikTok
 app.get('/auth/tiktok/callback', async (req, res) => {
   const { code, error, error_description } = req.query;
-  
   if (error) {
     return res.send(`<html><body style="font-family:sans-serif;padding:40px;text-align:center;background:#1a0a0a;color:#f09595;">
       <h1>❌ TikTok Auth Failed</h1>
@@ -86,9 +80,7 @@ app.get('/auth/tiktok/callback', async (req, res) => {
       <a href="/connect-tiktok" style="color:#fff;">← Try again</a>
     </body></html>`);
   }
-  
   if (!code) return res.status(400).send('Missing authorization code');
-  
   try {
     const tokenResponse = await axios.post(
       'https://open.tiktokapis.com/v2/oauth/token/',
@@ -101,11 +93,9 @@ app.get('/auth/tiktok/callback', async (req, res) => {
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
-    
     TIKTOK_ACCESS_TOKEN = tokenResponse.data.access_token;
     TIKTOK_OPEN_ID = tokenResponse.data.open_id;
     console.log('✅ TikTok connected! Open ID:', TIKTOK_OPEN_ID);
-    
     res.send(`<!DOCTYPE html><html><head><title>TikTok Connected!</title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <style>
@@ -136,13 +126,10 @@ app.get('/auth/tiktok/callback', async (req, res) => {
   }
 });
 
-// TikTok status endpoint
 app.get('/api/tiktok/status', (req, res) => {
-  res.json({
-    connected: !!TIKTOK_ACCESS_TOKEN,
-    open_id: TIKTOK_OPEN_ID
-  });
+  res.json({ connected: !!TIKTOK_ACCESS_TOKEN, open_id: TIKTOK_OPEN_ID });
 });
+
 // ========== LEGAL PAGES ==========
 app.get('/terms', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Terms of Service - UD Store</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -179,31 +166,37 @@ app.get('/privacy', (req, res) => {
   <p><em>Last updated: ${new Date().toLocaleDateString()}</em></p>
   </body></html>`);
 });
+
 // ========== TIKTOK URL VERIFICATION ==========
 app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
   res.type('text/plain');
   res.send('tiktok-developers-site-verification=CiTHepTjzowws82Q55YMYSvJscv4JfET');
 });
+
 // ========== HEALTH CHECK ==========
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
+    version: 'v4 - Full POD Pipeline',
     store: SHOPIFY_STORE,
     shopify_connected: !!SHOPIFY_ACCESS_TOKEN,
     claude_connected: !!ANTHROPIC_API_KEY,
     openai_connected: !!OPENAI_API_KEY,
     printify_connected: !!PRINTIFY_API_KEY,
+    printify_shop_id: PRINTIFY_SHOP_ID || null,
     tiktok_connected: !!TIKTOK_ACCESS_TOKEN,
     capabilities: {
       trend_discovery: !!ANTHROPIC_API_KEY,
       product_ideation: !!ANTHROPIC_API_KEY,
-      image_generation: !!OPENAI_API_KEY,
-      printify_create: !!PRINTIFY_API_KEY,
+      design_generation: !!OPENAI_API_KEY,
+      photo_generation: !!OPENAI_API_KEY,
+      printify_upload: !!PRINTIFY_API_KEY,
+      printify_create_product: !!(PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
+      printify_publish: !!(PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
       shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
-      tiktok_ad_copy: !!ANTHROPIC_API_KEY,
       tiktok_post: !!TIKTOK_ACCESS_TOKEN,
     },
-    message: 'Shopify Agent v3 - Smart Fulfillment Router'
+    message: 'UD Store Agent v4 - Full POD Pipeline'
   });
 });
 
@@ -258,34 +251,25 @@ function getClaude() {
 
 function extractJSON(text) {
   if (!text) return null;
-  
-  // Try 1: Look for JSON inside ```json ... ``` code blocks
   const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (codeBlockMatch) {
     try { return JSON.parse(codeBlockMatch[1].trim()); } catch (e) {}
   }
-  
-  // Try 2: Find the largest valid JSON object in the text
   const matches = [...text.matchAll(/\{[\s\S]*?\}/g)];
   if (matches.length > 0) {
-    // Sort by length, try largest first
     const sorted = matches.map(m => m[0]).sort((a, b) => b.length - a.length);
     for (const candidate of sorted) {
       try { return JSON.parse(candidate); } catch (e) {}
     }
   }
-  
-  // Try 3: Find from first { to last }
   const firstBrace = text.indexOf('{');
   const lastBrace = text.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch (e) {}
   }
-  
   return null;
 }
 
-// Helper to combine all text blocks from Claude's response
 function getAllText(content) {
   if (!Array.isArray(content)) return '';
   return content.filter(c => c.type === 'text').map(c => c.text).join('\n');
@@ -305,7 +289,7 @@ app.get('/api/customers', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== MODULE 1: TREND DISCOVERY ==========
+// ========== TREND DISCOVERY ==========
 app.post('/api/trends/discover', async (req, res) => {
   try {
     const { count = 5, focus = 'all niches' } = req.body;
@@ -347,13 +331,6 @@ The JSON structure MUST be:
   ]
 }
 
-Pick the BEST FULFILLMENT METHOD for each trend:
-- "Print-on-Demand" - design/slogan/art (tees, mugs, posters)
-- "Dropshipping" - physical product available from suppliers
-- "Digital" - downloadable (templates, presets, ebooks, wallpapers)
-- "Wholesale" - buy bulk and resell
-- "Affiliate" - just promote with affiliate links
-
 CRITICAL: Output ONLY the JSON object. Nothing else.`
       }]
     });
@@ -370,16 +347,12 @@ CRITICAL: Output ONLY the JSON object. Nothing else.`
   }
 });
 
-// ========== MODULE 2: PRODUCT IDEATION ==========
+// ========== PRODUCT IDEATION ==========
 app.post('/api/trends/ideate', async (req, res) => {
   try {
     const { trend, fulfillmentMethod = 'Print-on-Demand' } = req.body;
     if (!trend) return res.status(400).json({ error: 'trend required' });
-    
-    // Extract just essentials to keep token count low
-    const trendName = typeof trend === 'string' ? trend : (trend.name || 'unknown');
     const trendDesc = typeof trend === 'object' ? `${trend.name}. ${trend.why_hot || ''}. Audience: ${trend.target_audience || 'general'}.` : trend;
-    
     const claude = getClaude();
     const r = await claude.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -391,7 +364,7 @@ Fulfillment: ${fulfillmentMethod}
 
 Generate exactly 3 product concepts. Reply with ONLY raw JSON (no markdown, no commentary, no code fences):
 
-{"concepts":[{"title":"product title under 60 chars","description_html":"<p>compelling Shopify product description</p>","tagline":"catchy one-liner","tags":["tag1","tag2","tag3","tag4","tag5"],"price_usd":29.99,"compare_at_price":39.99,"tiktok_hook":"3-second hook","tiktok_caption":"full caption with emojis","tiktok_hashtags":"#a #b #c","tiktok_video_idea":"video concept","fulfillment_steps":["step 1","step 2","step 3"]}]}
+{"concepts":[{"title":"product title under 60 chars","description_html":"<p>compelling Shopify product description</p>","tagline":"catchy one-liner","tags":["tag1","tag2","tag3","tag4","tag5"],"price_usd":29.99,"compare_at_price":39.99,"design_prompt":"detailed prompt for AI image gen describing the GRAPHIC to print on the shirt - visual elements only, no model/setting","tiktok_hook":"3-second hook","tiktok_caption":"full caption with emojis","tiktok_hashtags":"#a #b #c","tiktok_video_idea":"video concept","fulfillment_steps":["step 1","step 2","step 3"]}]}
 
 Output ONLY the JSON object. Start with { and end with }.`
       }]
@@ -409,66 +382,30 @@ Output ONLY the JSON object. Start with { and end with }.`
   }
 });
 
-// ========== MODULE 3: SMART FULFILLMENT ROUTER ==========
+// ========== FULFILLMENT ROUTER ==========
 app.post('/api/fulfillment/route', async (req, res) => {
   try {
     const { concept } = req.body;
     if (!concept) return res.status(400).json({ error: 'concept required' });
-    
     const method = concept.fulfillment_method || 'Print-on-Demand';
     const result = { method, concept, actions: [] };
-    
     if (method === 'Print-on-Demand' && PRINTIFY_API_KEY) {
-      result.actions.push({ type: 'manual', label: 'Generate design image (using AI image gen of your choice)' });
-      result.actions.push({ type: 'auto', label: 'Upload design to Printify', endpoint: '/api/printify/upload-image' });
-      result.actions.push({ type: 'auto', label: 'Create Printify product', endpoint: '/api/printify/create' });
-      result.actions.push({ type: 'auto', label: 'Publish to Shopify', endpoint: '/api/shopify/publish' });
+      result.actions.push({ type: 'auto', label: 'Run full pipeline (design + Printify + Shopify)', endpoint: '/api/pipeline/full-create' });
     } else if (method === 'Digital') {
-      result.actions.push({ type: 'manual', label: 'Create your digital file (PDF, PNG, etc.)' });
-      result.actions.push({ type: 'auto', label: 'Create Shopify product as digital download', endpoint: '/api/shopify/publish' });
-      result.actions.push({ type: 'manual', label: 'Install Shopify Digital Downloads app to enable file delivery' });
+      result.actions.push({ type: 'manual', label: 'Create your digital file' });
+      result.actions.push({ type: 'auto', label: 'Create Shopify product', endpoint: '/api/shopify/publish' });
     } else if (method === 'Dropshipping') {
-      result.actions.push({ type: 'manual', label: `Search supplier sites with: ${concept.supplier_search_terms || concept.title}` });
-      result.actions.push({ type: 'manual', label: 'Connect a dropshipping app: DSers, Spocket, or CJ Dropshipping' });
+      result.actions.push({ type: 'manual', label: `Search supplier sites with: ${concept.title}` });
       result.actions.push({ type: 'auto', label: 'Create Shopify product listing', endpoint: '/api/shopify/publish' });
-    } else if (method === 'Wholesale') {
-      result.actions.push({ type: 'manual', label: 'Find wholesale supplier (Faire, Alibaba, trade shows)' });
-      result.actions.push({ type: 'manual', label: 'Order inventory sample first' });
-      result.actions.push({ type: 'auto', label: 'Create Shopify product listing', endpoint: '/api/shopify/publish' });
-    } else if (method === 'Affiliate') {
-      result.actions.push({ type: 'manual', label: 'Sign up for Amazon Associates / affiliate network' });
-      result.actions.push({ type: 'manual', label: 'Create blog post/landing page promoting product' });
     }
-    
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== MODULE 4: PRINTIFY ==========
-app.get('/api/printify/shops', async (req, res) => {
-  try { res.json(await printifyRequest('shops.json')); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/printify/products', async (req, res) => {
-  try {
-    const shopId = req.query.shop_id || PRINTIFY_SHOP_ID;
-    res.json(await printifyRequest(`shops/${shopId}/products.json`));
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/printify/upload-image', async (req, res) => {
-  try {
-    // Expects { file_name, contents } where contents is base64 OR { url } for url upload
-    res.json(await printifyRequest('uploads/images.json', 'POST', req.body));
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ========== MODULE 5: SHOPIFY PUBLISH ==========
+// ========== SHOPIFY PUBLISH (DIRECT) ==========
 app.post('/api/shopify/publish', async (req, res) => {
   try {
     const { title, description_html, body_html, vendor = 'UD Store', product_type, tags, price, compare_at_price, status = 'draft', is_digital = false } = req.body;
-    
     const variant = { 
       price: String(price || '29.99'),
       inventory_quantity: is_digital ? 999 : 100,
@@ -476,7 +413,6 @@ app.post('/api/shopify/publish', async (req, res) => {
       taxable: true,
     };
     if (compare_at_price) variant.compare_at_price = String(compare_at_price);
-    
     const product = {
       product: {
         title,
@@ -497,14 +433,9 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { messages, includeStoreData = true } = req.body;
     const claude = getClaude();
-    
     let system = `You are an expert AI agent managing the Shopify store "UD" (${SHOPIFY_STORE}) for owner Udo.
-You can help find trending products and create products via multiple fulfillment methods (Print-on-Demand, Dropshipping, Digital, Wholesale, Affiliate).
-
-When users ask about trends or what to sell, suggest they click "Find Trends" which triggers a real web search.
-When asked to create a product, walk them through the steps.
+You can find trending products and create products via Print-on-Demand (Printify), Digital, or Dropshipping.
 Be concise. Use markdown tables. Bold key facts.`;
-
     if (includeStoreData && SHOPIFY_ACCESS_TOKEN) {
       try {
         const [products, orders] = await Promise.all([
@@ -515,7 +446,6 @@ Be concise. Use markdown tables. Bold key facts.`;
 Orders: ${JSON.stringify(orders.orders.map(o => ({ name: o.name, total: o.total_price })))}`;
       } catch (e) {}
     }
-
     const r = await claude.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1500,
@@ -525,105 +455,390 @@ Orders: ${JSON.stringify(orders.orders.map(o => ({ name: o.name, total: o.total_
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== MODULE 6: DALL-E IMAGE GENERATION ==========
-app.post('/api/images/generate', async (req, res) => {
-  try {
-    if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY not set in Railway' });
-    }
+// ============================================================
+// ========== AI IMAGE GENERATION ==========
+// ============================================================
 
-    const { prompt, size = '1024x1024', quality = 'standard', n = 1 } = req.body;
+// Generate a CLEAN DESIGN graphic suitable for printing on apparel
+app.post('/api/images/design', async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
+    const { prompt, style = 'vector', size = '1024x1024', quality = 'hd' } = req.body;
     if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
-    // Enhance the prompt for better product photography
-    const enhancedPrompt = `Professional product photography: ${prompt}. High-quality studio lighting, clean background, commercial advertising style, sharp focus, vibrant colors, photorealistic, suitable for e-commerce and social media marketing.`;
+    let designPrompt;
+    if (style === 'vector') {
+      designPrompt = `Bold vector graphic design: ${prompt}. Clean flat design with thick outlines, vibrant solid colors, centered composition, simple but striking, suitable for screen printing on a t-shirt. Pure white background, no shadows, no gradients on background, illustration style only. The design should be the entire focus, occupying about 70 percent of the frame.`;
+    } else if (style === 'typography') {
+      designPrompt = `Bold typography t-shirt design: ${prompt}. Strong custom lettering with decorative elements, high contrast, centered composition, vintage or modern aesthetic. Pure white background, design only, no models, no clothing, no setting.`;
+    } else if (style === 'illustration') {
+      designPrompt = `Detailed illustration for t-shirt printing: ${prompt}. Highly detailed artwork, rich colors, centered composition. Pure white background, no models, no clothing, no setting - just the design artwork itself.`;
+    } else if (style === 'cultural') {
+      designPrompt = `Bold African cultural art design: ${prompt}. Inspired by traditional Ankara and Kente patterns, rich earth tones with gold accents, geometric and tribal motifs, celebratory and proud. Pure white background, vector style, centered composition, design only - no models, no clothing.`;
+    } else {
+      designPrompt = `Clean t-shirt design: ${prompt}. Bold colors, centered composition, suitable for printing. Pure white background, design only - no models, no clothing, no setting.`;
+    }
 
     const r = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'dall-e-3',
-        prompt: enhancedPrompt,
-        n: Math.min(n, 1), // DALL-E 3 only supports n=1
-        size,
-        quality,
-      }),
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({ model: 'dall-e-3', prompt: designPrompt, n: 1, size, quality }),
     });
-
     const data = await r.json();
     if (!r.ok) {
-      console.error('OpenAI error:', data);
+      console.error('OpenAI design error:', data);
       return res.status(r.status).json({ error: data.error?.message || 'OpenAI request failed' });
     }
+    res.json({
+      success: true,
+      url: data.data[0].url,
+      revised_prompt: data.data[0].revised_prompt,
+      style_used: style,
+      note: 'This is a DESIGN graphic. Upload to Printify to put it on real products.',
+    });
+  } catch (e) {
+    console.error('Design generation error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
+// Generate a marketing/lifestyle photo (NOT for printing)
+app.post('/api/images/photo', async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
+    const { prompt, size = '1024x1024', quality = 'standard' } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+    const enhancedPrompt = `Professional product photography: ${prompt}. High-quality studio lighting, clean background, commercial advertising style, sharp focus, vibrant colors, photorealistic.`;
+    const r = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({ model: 'dall-e-3', prompt: enhancedPrompt, n: 1, size, quality }),
+    });
+    const data = await r.json();
+    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || 'OpenAI request failed' });
+    res.json({ success: true, url: data.data[0].url, revised_prompt: data.data[0].revised_prompt });
+  } catch (e) {
+    console.error('Photo generation error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Legacy endpoint (kept for backwards compatibility)
+app.post('/api/images/generate', async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
+    const { prompt, size = '1024x1024', quality = 'standard', n = 1 } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+    const enhancedPrompt = `Professional product photography: ${prompt}. High-quality studio lighting, clean background, commercial advertising style, sharp focus, vibrant colors, photorealistic, suitable for e-commerce and social media marketing.`;
+    const r = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({ model: 'dall-e-3', prompt: enhancedPrompt, n: Math.min(n, 1), size, quality }),
+    });
+    const data = await r.json();
+    if (!r.ok) return res.status(r.status).json({ error: data.error?.message || 'OpenAI request failed' });
     res.json({
       success: true,
       images: data.data.map(img => ({ url: img.url, revised_prompt: img.revised_prompt })),
       count: data.data.length,
     });
-  } catch (e) {
-    console.error('Image generation error:', e);
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Generate multiple product images for a slideshow video
-app.post('/api/images/generate-batch', async (req, res) => {
+// ============================================================
+// ========== PRINTIFY POD PIPELINE ==========
+// ============================================================
+
+app.get('/api/printify/shops', async (req, res) => {
+  try { res.json(await printifyRequest('shops.json')); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/printify/products', async (req, res) => {
   try {
-    if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY not set in Railway' });
-    }
+    const shopId = req.query.shop_id || PRINTIFY_SHOP_ID;
+    if (!shopId) return res.status(400).json({ error: 'PRINTIFY_SHOP_ID not set' });
+    res.json(await printifyRequest(`shops/${shopId}/products.json`));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-    const { productName, productDescription, count = 4 } = req.body;
-    if (!productName) return res.status(400).json({ error: 'productName is required' });
+app.get('/api/printify/products/:productId', async (req, res) => {
+  try {
+    if (!PRINTIFY_SHOP_ID) return res.status(400).json({ error: 'PRINTIFY_SHOP_ID not set' });
+    const { productId } = req.params;
+    res.json(await printifyRequest(`shops/${PRINTIFY_SHOP_ID}/products/${productId}.json`));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-    // Different angles/styles for variety in the slideshow
-    const variations = [
-      `${productName} on a person modeling, lifestyle shot, ${productDescription}`,
-      `${productName} flat lay on neutral background, ${productDescription}`,
-      `${productName} close-up detail shot showing texture and quality, ${productDescription}`,
-      `${productName} in an aspirational lifestyle setting, ${productDescription}`,
-    ].slice(0, Math.min(count, 4));
+app.get('/api/printify/blueprints', async (req, res) => {
+  try {
+    const blueprints = await printifyRequest('catalog/blueprints.json');
+    const popular = blueprints.filter(b => {
+      const t = (b.title || '').toLowerCase();
+      return t.includes('cotton') || t.includes('hoodie') || t.includes('sweat') || t.includes('tee') || t.includes('shirt');
+    }).slice(0, 20).map(b => ({
+      id: b.id, title: b.title, brand: b.brand, model: b.model,
+      images: b.images?.slice(0, 1) || [],
+    }));
+    res.json({ blueprints: popular });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-    const images = [];
-    for (const variation of variations) {
-      const enhancedPrompt = `Professional product photography: ${variation}. High-quality studio lighting, sharp focus, vibrant colors, photorealistic, e-commerce ready.`;
-      
-      const r = await fetch('https://api.openai.com/v1/images/generations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'dall-e-3',
-          prompt: enhancedPrompt,
-          n: 1,
-          size: '1024x1024',
-          quality: 'standard',
-        }),
-      });
+app.get('/api/printify/blueprints/:blueprintId/providers', async (req, res) => {
+  try {
+    const { blueprintId } = req.params;
+    const providers = await printifyRequest(`catalog/blueprints/${blueprintId}/print_providers.json`);
+    res.json({ providers });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-      const data = await r.json();
-      if (r.ok && data.data?.[0]) {
-        images.push({ url: data.data[0].url, prompt: variation });
-      } else {
-        console.error('Batch image error for variation:', variation, data);
-      }
-    }
+app.get('/api/printify/blueprints/:blueprintId/providers/:providerId/variants', async (req, res) => {
+  try {
+    const { blueprintId, providerId } = req.params;
+    res.json(await printifyRequest(`catalog/blueprints/${blueprintId}/print_providers/${providerId}/variants.json`));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-    res.json({ success: true, images, count: images.length });
+// Upload an image to Printify (from a public URL like DALL-E)
+app.post('/api/printify/upload-from-url', async (req, res) => {
+  try {
+    const { url, file_name = 'design.png' } = req.body;
+    if (!url) return res.status(400).json({ error: 'url is required' });
+    const result = await printifyRequest('uploads/images.json', 'POST', { file_name, url });
+    res.json({ success: true, image: result });
   } catch (e) {
-    console.error('Batch image generation error:', e);
-    res.status(500).json({ error: e.message });
+    console.error('Printify upload error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.message || e.message });
   }
 });
 
+// Original upload-image endpoint (kept for compat)
+app.post('/api/printify/upload-image', async (req, res) => {
+  try { res.json(await printifyRequest('uploads/images.json', 'POST', req.body)); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// QUICK CREATE: Create Printify product with smart defaults from a design URL
+app.post('/api/printify/quick-create', async (req, res) => {
+  try {
+    if (!PRINTIFY_SHOP_ID) return res.status(400).json({ error: 'PRINTIFY_SHOP_ID not set' });
+    const {
+      title, description = '', design_url,
+      blueprint_search = 'cotton tee',
+      max_variants = 8, price_usd = 29.99,
+    } = req.body;
+    if (!title) return res.status(400).json({ error: 'title is required' });
+    if (!design_url) return res.status(400).json({ error: 'design_url is required' });
+
+    console.log('🎨 Quick-create starting:', title);
+
+    // 1. Find blueprint
+    const blueprints = await printifyRequest('catalog/blueprints.json');
+    const search = blueprint_search.toLowerCase();
+    let blueprint = blueprints.find(b => {
+      const t = (b.title || '').toLowerCase();
+      return t.includes(search) && t.includes('unisex');
+    }) || blueprints.find(b => (b.title || '').toLowerCase().includes(search));
+    if (!blueprint) return res.status(404).json({ error: `No blueprint found for: ${blueprint_search}` });
+    console.log('✅ Blueprint:', blueprint.id, blueprint.title);
+
+    // 2. Get providers
+    const providers = await printifyRequest(`catalog/blueprints/${blueprint.id}/print_providers.json`);
+    if (!providers?.length) return res.status(404).json({ error: 'No print providers' });
+    const provider = providers[0];
+    console.log('✅ Provider:', provider.id, provider.title);
+
+    // 3. Get variants
+    const variantsData = await printifyRequest(`catalog/blueprints/${blueprint.id}/print_providers/${provider.id}/variants.json`);
+    if (!variantsData.variants?.length) return res.status(404).json({ error: 'No variants' });
+    const selectedVariants = variantsData.variants.slice(0, max_variants);
+    const priceCents = Math.round(price_usd * 100);
+    console.log('✅ Variants:', selectedVariants.length);
+
+    // 4. Upload design to Printify
+    const uploadResult = await printifyRequest('uploads/images.json', 'POST', {
+      file_name: 'design.png', url: design_url,
+    });
+    console.log('✅ Image uploaded:', uploadResult.id);
+
+    // 5. Create product
+    const productPayload = {
+      title, description,
+      blueprint_id: blueprint.id,
+      print_provider_id: provider.id,
+      variants: selectedVariants.map(v => ({ id: v.id, price: priceCents, is_enabled: true })),
+      print_areas: [{
+        variant_ids: selectedVariants.map(v => v.id),
+        placeholders: [{
+          position: 'front',
+          images: [{ id: uploadResult.id, x: 0.5, y: 0.5, scale: 1.0, angle: 0 }],
+        }],
+      }],
+    };
+    const product = await printifyRequest(`shops/${PRINTIFY_SHOP_ID}/products.json`, 'POST', productPayload);
+    console.log('✅ Printify product created:', product.id);
+
+    res.json({
+      success: true,
+      product: {
+        id: product.id, title: product.title,
+        blueprint_id: blueprint.id,
+        blueprint_title: blueprint.title,
+        provider_title: provider.title,
+        variants_count: selectedVariants.length,
+        mockup_images: product.images?.map(i => i.src) || [],
+      },
+      message: 'Product created in Printify! Use /api/printify/publish/:productId to push to Shopify.',
+    });
+  } catch (e) {
+    console.error('Quick-create error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.message || e.message, details: e.response?.data });
+  }
+});
+
+// Publish a Printify product to Shopify
+app.post('/api/printify/publish/:productId', async (req, res) => {
+  try {
+    if (!PRINTIFY_SHOP_ID) return res.status(400).json({ error: 'PRINTIFY_SHOP_ID not set' });
+    const { productId } = req.params;
+    const result = await printifyRequest(
+      `shops/${PRINTIFY_SHOP_ID}/products/${productId}/publish.json`,
+      'POST',
+      { title: true, description: true, images: true, variants: true, tags: true }
+    );
+    res.json({ success: true, result, message: 'Published to Shopify!' });
+  } catch (e) {
+    console.error('Publish error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.message || e.message });
+  }
+});
+
+// ============================================================
+// ========== MEGA PIPELINE: DESIGN → PRINTIFY → SHOPIFY ==========
+// ============================================================
+app.post('/api/pipeline/full-create', async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) return res.status(400).json({ error: 'OPENAI_API_KEY not set' });
+    if (!PRINTIFY_API_KEY) return res.status(400).json({ error: 'PRINTIFY_API_KEY not set' });
+    if (!PRINTIFY_SHOP_ID) return res.status(400).json({ error: 'PRINTIFY_SHOP_ID not set' });
+
+    const {
+      title, description = '', design_prompt,
+      design_style = 'vector',
+      blueprint_search = 'cotton tee',
+      price_usd = 29.99,
+      auto_publish = false,
+    } = req.body;
+
+    if (!title) return res.status(400).json({ error: 'title is required' });
+    if (!design_prompt) return res.status(400).json({ error: 'design_prompt is required' });
+
+    const log = [];
+
+    // Step 1: Generate design
+    log.push('Generating AI design...');
+    let stylePrompt;
+    if (design_style === 'cultural') {
+      stylePrompt = `Bold African cultural art design: ${design_prompt}. Inspired by traditional Ankara and Kente patterns, rich earth tones with gold accents, geometric and tribal motifs. Pure white background, vector style, centered composition, design only - no models, no clothing.`;
+    } else if (design_style === 'typography') {
+      stylePrompt = `Bold typography t-shirt design: ${design_prompt}. Strong custom lettering, high contrast, centered composition. Pure white background, design only, no models.`;
+    } else {
+      stylePrompt = `Bold vector graphic design: ${design_prompt}. Clean flat design with thick outlines, vibrant solid colors, centered composition. Pure white background, no shadows, design only.`;
+    }
+
+    const dalleR = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({ model: 'dall-e-3', prompt: stylePrompt, n: 1, size: '1024x1024', quality: 'hd' }),
+    });
+    const dalleData = await dalleR.json();
+    if (!dalleR.ok) return res.status(500).json({ error: 'Design generation failed', details: dalleData });
+    const designUrl = dalleData.data[0].url;
+    log.push('✅ Design generated');
+
+    // Step 2: Find blueprint
+    log.push('Finding suitable product blueprint...');
+    const blueprints = await printifyRequest('catalog/blueprints.json');
+    const search = blueprint_search.toLowerCase();
+    let blueprint = blueprints.find(b => {
+      const t = (b.title || '').toLowerCase();
+      return t.includes(search) && t.includes('unisex');
+    }) || blueprints.find(b => (b.title || '').toLowerCase().includes(search));
+    if (!blueprint) return res.status(404).json({ error: `No blueprint found for: ${blueprint_search}`, log });
+    log.push(`✅ Blueprint: ${blueprint.title}`);
+
+    // Step 3: Get provider
+    const providers = await printifyRequest(`catalog/blueprints/${blueprint.id}/print_providers.json`);
+    if (!providers?.length) return res.status(404).json({ error: 'No providers', log });
+    const provider = providers[0];
+    log.push(`✅ Provider: ${provider.title}`);
+
+    // Step 4: Get variants
+    const variantsData = await printifyRequest(`catalog/blueprints/${blueprint.id}/print_providers/${provider.id}/variants.json`);
+    if (!variantsData.variants?.length) return res.status(404).json({ error: 'No variants', log });
+    const selectedVariants = variantsData.variants.slice(0, 8);
+    const priceCents = Math.round(price_usd * 100);
+    log.push(`✅ ${selectedVariants.length} variants selected`);
+
+    // Step 5: Upload design to Printify
+    log.push('Uploading design to Printify...');
+    const uploadResult = await printifyRequest('uploads/images.json', 'POST', {
+      file_name: 'design.png', url: designUrl,
+    });
+    log.push('✅ Design uploaded to Printify');
+
+    // Step 6: Create Printify product
+    log.push('Creating Printify product (with mockups)...');
+    const productPayload = {
+      title, description,
+      blueprint_id: blueprint.id,
+      print_provider_id: provider.id,
+      variants: selectedVariants.map(v => ({ id: v.id, price: priceCents, is_enabled: true })),
+      print_areas: [{
+        variant_ids: selectedVariants.map(v => v.id),
+        placeholders: [{
+          position: 'front',
+          images: [{ id: uploadResult.id, x: 0.5, y: 0.5, scale: 1.0, angle: 0 }],
+        }],
+      }],
+    };
+    const product = await printifyRequest(`shops/${PRINTIFY_SHOP_ID}/products.json`, 'POST', productPayload);
+    log.push(`✅ Product created (Printify id: ${product.id})`);
+
+    // Step 7: Optional auto-publish
+    let publishResult = null;
+    if (auto_publish) {
+      log.push('Publishing to Shopify...');
+      publishResult = await printifyRequest(
+        `shops/${PRINTIFY_SHOP_ID}/products/${product.id}/publish.json`,
+        'POST',
+        { title: true, description: true, images: true, variants: true, tags: true }
+      );
+      log.push('✅ Published to Shopify');
+    }
+
+    res.json({
+      success: true,
+      log,
+      design: { url: designUrl, prompt: dalleData.data[0].revised_prompt },
+      product: {
+        printify_id: product.id,
+        title: product.title,
+        mockup_images: product.images?.map(i => i.src) || [],
+        blueprint: blueprint.title,
+        provider: provider.title,
+      },
+      publishing: auto_publish ? publishResult : 'skipped',
+    });
+  } catch (e) {
+    console.error('Pipeline error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.message || e.message, details: e.response?.data });
+  }
+});
+
+// ============================================================
 app.listen(PORT, () => {
-  console.log(`🚀 Shopify Agent v3 (Smart Router) on port ${PORT}`);
+  console.log(`🚀 UD Store Agent v4 (Full POD Pipeline) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
-  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} | TikTok: ${!!TIKTOK_ACCESS_TOKEN}`);
+  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} (shop: ${PRINTIFY_SHOP_ID || 'none'}) | TikTok: ${!!TIKTOK_ACCESS_TOKEN}`);
 });
