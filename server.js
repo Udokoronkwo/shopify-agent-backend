@@ -520,8 +520,103 @@ Orders: ${JSON.stringify(orders.orders.map(o => ({ name: o.name, total: o.total_
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ===== DALL-E IMAGE GENERATION =====
+app.post('/api/images/generate', async (req, res) => {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'OPENAI_API_KEY not set in Railway' });
+    }
+
+    const { prompt, size = '1024x1024', quality = 'standard', n = 1 } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+    // Enhance the prompt for better product photography
+    const enhancedPrompt = `Professional product photography: ${prompt}. High-quality studio lighting, clean background, commercial advertising style, sharp focus, vibrant colors, photorealistic, suitable for e-commerce and social media marketing.`;
+
+    const r = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt: enhancedPrompt,
+        n: Math.min(n, 1), // DALL-E 3 only supports n=1
+        size,
+        quality,
+      }),
+    });
+
+    const data = await r.json();
+    if (!r.ok) {
+      console.error('OpenAI error:', data);
+      return res.status(r.status).json({ error: data.error?.message || 'OpenAI request failed' });
+    }
+
+    res.json({
+      success: true,
+      images: data.data.map(img => ({ url: img.url, revised_prompt: img.revised_prompt })),
+      count: data.data.length,
+    });
+  } catch (e) {
+    console.error('Image generation error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Generate multiple product images for a slideshow video
+app.post('/api/images/generate-batch', async (req, res) => {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'OPENAI_API_KEY not set in Railway' });
+    }
+
+    const { productName, productDescription, count = 4 } = req.body;
+    if (!productName) return res.status(400).json({ error: 'productName is required' });
+
+    // Different angles/styles for variety in the slideshow
+    const variations = [
+      `${productName} on a person modeling, lifestyle shot, ${productDescription}`,
+      `${productName} flat lay on neutral background, ${productDescription}`,
+      `${productName} close-up detail shot showing texture and quality, ${productDescription}`,
+      `${productName} in an aspirational lifestyle setting, ${productDescription}`,
+    ].slice(0, Math.min(count, 4));
+
+    const images = [];
+    for (const variation of variations) {
+      const enhancedPrompt = `Professional product photography: ${variation}. High-quality studio lighting, sharp focus, vibrant colors, photorealistic, e-commerce ready.`;
+      
+      const r = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'dall-e-3',
+          prompt: enhancedPrompt,
+          n: 1,
+          size: '1024x1024',
+          quality: 'standard',
+        }),
+      });
+
+      const data = await r.json();
+      if (r.ok && data.data?.[0]) {
+        images.push({ url: data.data[0].url, prompt: variation });
+      }
+    }
+
+    res.json({ success: true, images, count: images.length });
+  } catch (e) {
+    console.error('Batch image generation error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Shopify Agent v3 (Smart Router) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
-  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | Printify: ${!!PRINTIFY_API_KEY}`);
+  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!process.env.OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY}`);
 });
