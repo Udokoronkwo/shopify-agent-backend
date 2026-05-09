@@ -1,7 +1,9 @@
-// Shopify AI Agent Backend v5 - 3-Pillar Empire
-// Pillar 1: Wall Art (POD)
-// Pillar 2: Digital Products
-// Pillar 3: Trending Dropshipping
+// Shopify AI Agent Backend v6 - Faith-Based Empire
+// Theme: Biblical / Scripture Graphics
+// Pillar 1: Scripture Wall Art (POD)
+// Pillar 2: Digital Faith Products (wallpapers, devotionals)
+// Pillar 3: Trending Dropshipping (faith-aligned)
+// Pillar 4: Apparel POD (Christian tees, hoodies)
 
 const express = require('express');
 const cors = require('cors');
@@ -161,11 +163,12 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v5 - 3-Pillar Empire',
+    version: 'v6 - Faith-Based Empire',
+    theme: 'Biblical / Scripture Graphics',
     store: SHOPIFY_STORE,
     pillars: {
-      wall_art: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
-      digital_products: !!(OPENAI_API_KEY && SHOPIFY_ACCESS_TOKEN),
+      scripture_wall_art: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
+      digital_faith_products: !!(OPENAI_API_KEY && SHOPIFY_ACCESS_TOKEN),
       dropshipping: !!(ANTHROPIC_API_KEY && SHOPIFY_ACCESS_TOKEN),
       apparel_pod: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
     },
@@ -188,7 +191,7 @@ app.get('/', (req, res) => {
       shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
       tiktok_post: !!TIKTOK_ACCESS_TOKEN,
     },
-    message: 'UD Store Agent v5 - 3-Pillar Empire (Wall Art + Digital + Dropshipping)'
+    message: 'UD Store Agent v6 - Faith-Based Empire (Scripture Wall Art + Digital Faith + Dropshipping)'
   });
 });
 
@@ -265,6 +268,135 @@ function extractJSON(text) {
 function getAllText(content) {
   if (!Array.isArray(content)) return '';
   return content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+}
+
+// ============================================================
+// ========== 🙏 SCRIPTURE LIBRARY & STYLE ROTATIONS ==========
+// ============================================================
+
+const SCRIPTURE_LIBRARY = {
+  strength: [
+    { verse: "I can do all things through Christ who strengthens me.", reference: "Philippians 4:13" },
+    { verse: "Be strong and courageous. Do not be afraid; do not be discouraged, for the Lord your God will be with you wherever you go.", reference: "Joshua 1:9" },
+    { verse: "She is clothed with strength and dignity, and she laughs without fear of the future.", reference: "Proverbs 31:25" },
+    { verse: "The Lord is my strength and my shield; my heart trusts in him, and he helps me.", reference: "Psalm 28:7" },
+  ],
+  faith: [
+    { verse: "Now faith is confidence in what we hope for and assurance about what we do not see.", reference: "Hebrews 11:1" },
+    { verse: "We live by faith, not by sight.", reference: "2 Corinthians 5:7" },
+    { verse: "Faith over fear.", reference: "Inspired by 2 Timothy 1:7" },
+    { verse: "If you have faith as small as a mustard seed, nothing will be impossible for you.", reference: "Matthew 17:20" },
+  ],
+  love: [
+    { verse: "Love is patient, love is kind. It does not envy, it does not boast, it is not proud.", reference: "1 Corinthians 13:4" },
+    { verse: "For God so loved the world that he gave his one and only Son.", reference: "John 3:16" },
+    { verse: "Above all, love each other deeply, because love covers over a multitude of sins.", reference: "1 Peter 4:8" },
+    { verse: "We love because he first loved us.", reference: "1 John 4:19" },
+  ],
+  hope: [
+    { verse: "For I know the plans I have for you, declares the Lord, plans to prosper you and not to harm you.", reference: "Jeremiah 29:11" },
+    { verse: "And we know that in all things God works for the good of those who love him.", reference: "Romans 8:28" },
+    { verse: "But those who hope in the Lord will renew their strength.", reference: "Isaiah 40:31" },
+    { verse: "Hope deferred makes the heart sick, but a longing fulfilled is a tree of life.", reference: "Proverbs 13:12" },
+  ],
+  peace: [
+    { verse: "Peace I leave with you; my peace I give you.", reference: "John 14:27" },
+    { verse: "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God.", reference: "Philippians 4:6" },
+    { verse: "Be still, and know that I am God.", reference: "Psalm 46:10" },
+    { verse: "You will keep in perfect peace those whose minds are steadfast, because they trust in you.", reference: "Isaiah 26:3" },
+  ],
+  blessed: [
+    { verse: "Blessed are those who trust in the Lord, whose confidence is in him.", reference: "Jeremiah 17:7" },
+    { verse: "The Lord bless you and keep you; the Lord make his face shine on you and be gracious to you.", reference: "Numbers 6:24-25" },
+    { verse: "Blessed is the one who perseveres under trial.", reference: "James 1:12" },
+    { verse: "Every good and perfect gift is from above.", reference: "James 1:17" },
+  ],
+  worship: [
+    { verse: "Sing to the Lord a new song; sing to the Lord, all the earth.", reference: "Psalm 96:1" },
+    { verse: "Let everything that has breath praise the Lord.", reference: "Psalm 150:6" },
+    { verse: "Worship the Lord in the splendor of his holiness.", reference: "1 Chronicles 16:29" },
+    { verse: "I will praise you, Lord, with all my heart.", reference: "Psalm 9:1" },
+  ],
+  prayer: [
+    { verse: "Pray without ceasing.", reference: "1 Thessalonians 5:17" },
+    { verse: "The prayer of a righteous person is powerful and effective.", reference: "James 5:16" },
+    { verse: "And whatever you ask in prayer, you will receive, if you have faith.", reference: "Matthew 21:22" },
+    { verse: "Devote yourselves to prayer, being watchful and thankful.", reference: "Colossians 4:2" },
+  ],
+};
+
+// Rotating aesthetic styles for variety
+const FAITH_AESTHETICS = [
+  'modern minimalist',
+  'vintage rustic with wood texture',
+  'royal golden illuminated manuscript',
+  'bold contemporary graphic',
+  'soft watercolor pastel',
+  'elegant typographic',
+  'dramatic stained glass',
+  'cinematic divine light',
+];
+
+// Rotating imagery for variety
+const FAITH_IMAGERY = [
+  'simple cross silhouette',
+  'praying hands',
+  'dove of peace with olive branch',
+  'majestic mountains at sunrise',
+  'rays of divine light breaking through clouds',
+  'open holy bible with soft glow',
+  'gentle lamb in pastoral setting',
+  'shepherd staff and crown of thorns',
+  'flowing river of life',
+  'sun rising over hills',
+];
+
+// Pick a random scripture from a theme
+function pickScripture(theme = 'random') {
+  const themes = Object.keys(SCRIPTURE_LIBRARY);
+  const chosenTheme = (theme === 'random' || !SCRIPTURE_LIBRARY[theme])
+    ? themes[Math.floor(Math.random() * themes.length)]
+    : theme;
+  const verses = SCRIPTURE_LIBRARY[chosenTheme];
+  const chosen = verses[Math.floor(Math.random() * verses.length)];
+  return { ...chosen, theme: chosenTheme };
+}
+
+// Pick a random aesthetic
+function pickAesthetic() {
+  return FAITH_AESTHETICS[Math.floor(Math.random() * FAITH_AESTHETICS.length)];
+}
+
+// Pick random imagery
+function pickImagery() {
+  return FAITH_IMAGERY[Math.floor(Math.random() * FAITH_IMAGERY.length)];
+}
+
+// Build a faith-based art prompt
+function buildFaithPrompt(opts) {
+  const {
+    theme = 'random',
+    aesthetic = pickAesthetic(),
+    imagery = pickImagery(),
+    custom_subject = null,
+    text_mode = 'imagery_only', // imagery_only OR with_verse
+    scripture = null, // pre-picked or auto
+  } = opts;
+
+  const subjectPart = custom_subject
+    ? custom_subject
+    : `${imagery}`;
+
+  const aestheticPart = aesthetic;
+
+  let textInstruction;
+  if (text_mode === 'with_verse' && scripture) {
+    textInstruction = `Include the text "${scripture.verse.substring(0, 80)}" in elegant typography integrated into the design. The reference "${scripture.reference}" should appear in smaller text below.`;
+  } else {
+    textInstruction = `NO TEXT NO WORDS NO LETTERS in the image. Pure visual artwork only - text will be added separately.`;
+  }
+
+  return `Beautiful Christian faith-based wall art: ${subjectPart}. Style: ${aestheticPart}. Spiritual, uplifting, reverent atmosphere. Premium quality artwork suitable for home decor. ${textInstruction} Centered composition, gallery-worthy aesthetic, peaceful and meaningful.`;
 }
 
 // Helper: Generate a single DALL-E image
@@ -866,6 +998,266 @@ app.post('/api/pipeline/create-wall-art', async (req, res) => {
 });
 
 // ============================================================
+// ========== 🙏 SCRIPTURE WALL ART PIPELINE (FAITH-BASED) ==========
+// ============================================================
+// The MAIN endpoint for biblical/scripture wall art products.
+// Auto-rotates aesthetics and imagery for variety.
+app.post('/api/pipeline/create-scripture-art', async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) return res.status(400).json({ error: 'OPENAI_API_KEY not set' });
+    if (!PRINTIFY_API_KEY) return res.status(400).json({ error: 'PRINTIFY_API_KEY not set' });
+    if (!PRINTIFY_SHOP_ID) return res.status(400).json({ error: 'PRINTIFY_SHOP_ID not set' });
+
+    const {
+      // Either provide your own theme OR let it pick randomly
+      scripture_theme = 'random', // strength|faith|love|hope|peace|blessed|worship|prayer|random
+      verse_reference = null, // e.g. "Philippians 4:13" - if set, uses this specific verse
+      custom_verse_text = null, // override - your own custom text
+      
+      // Aesthetic options - random by default for variety
+      aesthetic = null, // null = random rotation
+      imagery = null, // null = random rotation
+      custom_subject = null, // override the imagery entirely
+      
+      // Text mode
+      text_mode = 'imagery_only', // imagery_only OR with_verse
+      
+      // Product config
+      product_type = 'poster', // poster, canvas, framed
+      price_usd = 39.99,
+      title = null, // auto-generated if not provided
+      description = null, // auto-generated if not provided
+      auto_publish = false,
+    } = req.body;
+
+    const log = [];
+
+    // Step 1: Pick scripture (custom, by reference, or random from theme)
+    let scripture;
+    if (custom_verse_text) {
+      scripture = { verse: custom_verse_text, reference: verse_reference || 'Custom', theme: scripture_theme };
+    } else if (verse_reference) {
+      // Search the library for a matching reference
+      let found = null;
+      for (const t of Object.keys(SCRIPTURE_LIBRARY)) {
+        const match = SCRIPTURE_LIBRARY[t].find(s => s.reference === verse_reference);
+        if (match) { found = { ...match, theme: t }; break; }
+      }
+      scripture = found || pickScripture(scripture_theme);
+    } else {
+      scripture = pickScripture(scripture_theme);
+    }
+    log.push(`📖 Scripture: "${scripture.reference}" (theme: ${scripture.theme})`);
+
+    // Step 2: Pick aesthetic + imagery
+    const chosenAesthetic = aesthetic || pickAesthetic();
+    const chosenImagery = custom_subject || imagery || pickImagery();
+    log.push(`🎨 Aesthetic: ${chosenAesthetic}`);
+    log.push(`🖼️ Imagery: ${chosenImagery}`);
+
+    // Step 3: Build prompt and generate
+    const artPrompt = buildFaithPrompt({
+      aesthetic: chosenAesthetic,
+      imagery: chosenImagery,
+      custom_subject,
+      text_mode,
+      scripture,
+    });
+    log.push('Generating Christian wall art...');
+    const artResult = await generateDalleImage(artPrompt, { size: '1024x1024', quality: 'hd' });
+    log.push('✅ Art generated');
+
+    // Step 4: Auto-generate title and description if not provided
+    const finalTitle = title || `${scripture.reference} - ${chosenImagery.split(' ').slice(0, 3).join(' ')} Christian Wall Art`;
+    const finalDescription = description || `Beautiful Christian faith-based wall art featuring ${chosenImagery} in a ${chosenAesthetic} style. Inspired by ${scripture.reference}: "${scripture.verse}" Premium quality print, perfect for home, office, or as a thoughtful gift for any believer. Printed on demand with love.`;
+
+    // Step 5: Find blueprint
+    log.push(`Finding ${product_type} blueprint...`);
+    let blueprint;
+    if (product_type === 'canvas') {
+      blueprint = await findBlueprint(['canvas']);
+    } else if (product_type === 'framed') {
+      blueprint = await findBlueprint(['framed', 'poster']);
+    } else {
+      blueprint = await findBlueprint(['poster']);
+    }
+    if (!blueprint) return res.status(404).json({ error: `No ${product_type} blueprint found`, log });
+    log.push(`✅ Blueprint: ${blueprint.title}`);
+
+    // Step 6: Provider + variants
+    const providers = await printifyRequest(`catalog/blueprints/${blueprint.id}/print_providers.json`);
+    if (!providers?.length) return res.status(404).json({ error: 'No providers', log });
+    const provider = providers[0];
+    log.push(`✅ Provider: ${provider.title}`);
+
+    const variantsData = await printifyRequest(`catalog/blueprints/${blueprint.id}/print_providers/${provider.id}/variants.json`);
+    if (!variantsData.variants?.length) return res.status(404).json({ error: 'No variants', log });
+    const selectedVariants = variantsData.variants.slice(0, 6);
+    const priceCents = Math.round(price_usd * 100);
+    log.push(`✅ ${selectedVariants.length} sizes selected`);
+
+    // Step 7: Upload + create product
+    const uploadResult = await printifyRequest('uploads/images.json', 'POST', {
+      file_name: 'scripture-art.png', url: artResult.url,
+    });
+    log.push('✅ Art uploaded to Printify');
+
+    // SCALE FIX: 1.0 fills the print area better than the previous default
+    const productPayload = {
+      title: finalTitle, description: finalDescription,
+      blueprint_id: blueprint.id,
+      print_provider_id: provider.id,
+      variants: selectedVariants.map(v => ({ id: v.id, price: priceCents, is_enabled: true })),
+      print_areas: [{
+        variant_ids: selectedVariants.map(v => v.id),
+        placeholders: [{ position: 'front', images: [{ id: uploadResult.id, x: 0.5, y: 0.5, scale: 1.0, angle: 0 }] }],
+      }],
+      tags: ['Christian', 'Faith', 'Scripture', 'Bible Verse', scripture.theme, scripture.reference],
+    };
+    const product = await printifyRequest(`shops/${PRINTIFY_SHOP_ID}/products.json`, 'POST', productPayload);
+    log.push(`✅ Scripture art product created (id: ${product.id})`);
+
+    let publishResult = null;
+    if (auto_publish) {
+      publishResult = await printifyRequest(
+        `shops/${PRINTIFY_SHOP_ID}/products/${product.id}/publish.json`,
+        'POST', { title: true, description: true, images: true, variants: true, tags: true }
+      );
+      log.push('✅ Published to Shopify');
+    }
+
+    res.json({
+      success: true, log, pillar: 'scripture_wall_art',
+      scripture: scripture,
+      design: {
+        aesthetic: chosenAesthetic,
+        imagery: chosenImagery,
+        text_mode,
+        prompt_used: artPrompt,
+      },
+      art: { url: artResult.url, dalle_revised_prompt: artResult.revised_prompt },
+      product: {
+        printify_id: product.id,
+        title: finalTitle,
+        description: finalDescription,
+        mockup_images: product.images?.map(i => i.src) || [],
+        blueprint: blueprint.title,
+        provider: provider.title,
+        product_type, price_usd,
+      },
+      publishing: auto_publish ? publishResult : 'skipped',
+      next_steps: text_mode === 'imagery_only' ? [
+        'Open the Printify product editor',
+        `Add the verse text: "${scripture.verse}"`,
+        `Add the reference: "${scripture.reference}"`,
+        'Position text below or beside the imagery',
+        'Save and publish to Shopify',
+      ] : ['Review the design - publish to Shopify when ready'],
+    });
+  } catch (e) {
+    console.error('Scripture art pipeline error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.message || e.message, details: e.response?.data });
+  }
+});
+
+// ========== BATCH GENERATE: Create N scripture art products at once ==========
+app.post('/api/pipeline/create-scripture-art-batch', async (req, res) => {
+  try {
+    const {
+      count = 3, // how many products to make
+      scripture_theme = 'random',
+      product_type = 'poster',
+      price_usd = 39.99,
+      auto_publish = false,
+    } = req.body;
+
+    if (count > 10) return res.status(400).json({ error: 'Max 10 per batch (rate limits + cost)' });
+
+    const results = [];
+    for (let i = 0; i < count; i++) {
+      try {
+        // Each gets random aesthetic + imagery for variety
+        const scripture = pickScripture(scripture_theme);
+        const aesthetic = pickAesthetic();
+        const imagery = pickImagery();
+
+        const artPrompt = buildFaithPrompt({ aesthetic, imagery, scripture, text_mode: 'imagery_only' });
+        const artResult = await generateDalleImage(artPrompt, { size: '1024x1024', quality: 'hd' });
+
+        const blueprint = await findBlueprint([product_type === 'canvas' ? 'canvas' : 'poster']);
+        if (!blueprint) { results.push({ index: i + 1, error: 'no blueprint' }); continue; }
+
+        const providers = await printifyRequest(`catalog/blueprints/${blueprint.id}/print_providers.json`);
+        const provider = providers[0];
+        const variantsData = await printifyRequest(`catalog/blueprints/${blueprint.id}/print_providers/${provider.id}/variants.json`);
+        const selectedVariants = variantsData.variants.slice(0, 6);
+        const priceCents = Math.round(price_usd * 100);
+
+        const uploadResult = await printifyRequest('uploads/images.json', 'POST', { file_name: `scripture-${i}.png`, url: artResult.url });
+
+        const title = `${scripture.reference} - ${imagery.split(' ').slice(0, 3).join(' ')} Christian Wall Art`;
+        const description = `Beautiful Christian faith-based wall art featuring ${imagery} in a ${aesthetic} style. Inspired by ${scripture.reference}: "${scripture.verse}"`;
+
+        const productPayload = {
+          title, description,
+          blueprint_id: blueprint.id,
+          print_provider_id: provider.id,
+          variants: selectedVariants.map(v => ({ id: v.id, price: priceCents, is_enabled: true })),
+          print_areas: [{
+            variant_ids: selectedVariants.map(v => v.id),
+            placeholders: [{ position: 'front', images: [{ id: uploadResult.id, x: 0.5, y: 0.5, scale: 1.0, angle: 0 }] }],
+          }],
+          tags: ['Christian', 'Faith', 'Scripture', scripture.theme, scripture.reference],
+        };
+
+        const product = await printifyRequest(`shops/${PRINTIFY_SHOP_ID}/products.json`, 'POST', productPayload);
+
+        if (auto_publish) {
+          await printifyRequest(
+            `shops/${PRINTIFY_SHOP_ID}/products/${product.id}/publish.json`,
+            'POST', { title: true, description: true, images: true, variants: true, tags: true }
+          );
+        }
+
+        results.push({
+          index: i + 1, success: true,
+          scripture, aesthetic, imagery,
+          art_url: artResult.url,
+          product: { printify_id: product.id, title, mockups: product.images?.map(i => i.src) || [] },
+        });
+      } catch (err) {
+        results.push({ index: i + 1, error: err.response?.data?.message || err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      total: count,
+      successful: results.filter(r => r.success).length,
+      failed: results.filter(r => r.error).length,
+      results,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ========== HELPERS: Browse the scripture library ==========
+app.get('/api/scripture/library', (req, res) => {
+  res.json({
+    themes: Object.keys(SCRIPTURE_LIBRARY),
+    library: SCRIPTURE_LIBRARY,
+    aesthetics: FAITH_AESTHETICS,
+    imagery_options: FAITH_IMAGERY,
+  });
+});
+
+app.get('/api/scripture/random', (req, res) => {
+  const { theme = 'random' } = req.query;
+  res.json({ scripture: pickScripture(theme), aesthetic: pickAesthetic(), imagery: pickImagery() });
+});
+
+// ============================================================
 // ========== 🏛️ PILLAR 3: DIGITAL PRODUCTS PIPELINE ==========
 // ============================================================
 app.post('/api/pipeline/create-digital-pack', async (req, res) => {
@@ -1108,8 +1500,9 @@ Output ONLY the JSON object.`
 
 // ============================================================
 app.listen(PORT, () => {
-  console.log(`🚀 UD Store Agent v5 (3-Pillar Empire) on port ${PORT}`);
+  console.log(`🚀 UD Store Agent v6 (Faith-Based Empire) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
+  console.log(`🙏 Theme: Biblical / Scripture Graphics`);
   console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} (shop: ${PRINTIFY_SHOP_ID || 'none'}) | TikTok: ${!!TIKTOK_ACCESS_TOKEN}`);
-  console.log(`🏛️ Pillars: Wall Art ✓ Digital ✓ Dropshipping ✓ Apparel ✓`);
+  console.log(`🏛️ Pillars: Scripture Wall Art ✓ Digital Faith ✓ Dropshipping ✓ Apparel ✓`);
 });
