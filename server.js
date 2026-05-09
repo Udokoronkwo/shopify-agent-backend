@@ -16,6 +16,7 @@ const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const SHOPIFY_SCOPES = 'read_products,write_products,read_orders,write_orders,read_inventory,write_inventory,read_customers,write_customers';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PRINTIFY_API_KEY = process.env.PRINTIFY_API_KEY;
 const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
@@ -190,13 +191,17 @@ app.get('/', (req, res) => {
     store: SHOPIFY_STORE,
     shopify_connected: !!SHOPIFY_ACCESS_TOKEN,
     claude_connected: !!ANTHROPIC_API_KEY,
+    openai_connected: !!OPENAI_API_KEY,
     printify_connected: !!PRINTIFY_API_KEY,
+    tiktok_connected: !!TIKTOK_ACCESS_TOKEN,
     capabilities: {
       trend_discovery: !!ANTHROPIC_API_KEY,
       product_ideation: !!ANTHROPIC_API_KEY,
+      image_generation: !!OPENAI_API_KEY,
       printify_create: !!PRINTIFY_API_KEY,
       shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
       tiktok_ad_copy: !!ANTHROPIC_API_KEY,
+      tiktok_post: !!TIKTOK_ACCESS_TOKEN,
     },
     message: 'Shopify Agent v3 - Smart Fulfillment Router'
   });
@@ -520,10 +525,10 @@ Orders: ${JSON.stringify(orders.orders.map(o => ({ name: o.name, total: o.total_
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ===== DALL-E IMAGE GENERATION =====
+// ========== MODULE 6: DALL-E IMAGE GENERATION ==========
 app.post('/api/images/generate', async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(500).json({ error: 'OPENAI_API_KEY not set in Railway' });
     }
 
@@ -537,7 +542,7 @@ app.post('/api/images/generate', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: 'dall-e-3',
@@ -568,7 +573,7 @@ app.post('/api/images/generate', async (req, res) => {
 // Generate multiple product images for a slideshow video
 app.post('/api/images/generate-batch', async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(500).json({ error: 'OPENAI_API_KEY not set in Railway' });
     }
 
@@ -591,7 +596,7 @@ app.post('/api/images/generate-batch', async (req, res) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
           model: 'dall-e-3',
@@ -605,6 +610,8 @@ app.post('/api/images/generate-batch', async (req, res) => {
       const data = await r.json();
       if (r.ok && data.data?.[0]) {
         images.push({ url: data.data[0].url, prompt: variation });
+      } else {
+        console.error('Batch image error for variation:', variation, data);
       }
     }
 
@@ -618,5 +625,5 @@ app.post('/api/images/generate-batch', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Shopify Agent v3 (Smart Router) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
-  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!process.env.OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY}`);
+  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} | TikTok: ${!!TIKTOK_ACCESS_TOKEN}`);
 });
