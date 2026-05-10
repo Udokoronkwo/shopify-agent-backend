@@ -1,9 +1,10 @@
-// Shopify AI Agent Backend v7 - Faith-Based Empire (Bestseller Aesthetic)
-// Theme: Christian Wall Art targeting proven Etsy bestseller styles
-// Style: Classical oil painting / Renaissance / Hofmann-inspired religious art
+// Shopify AI Agent Backend v8 - Faith Empire + Dropship Engine
+// Brand pillars: Scripture Wall Art / Apparel / Digital (all Christian)
+// Volume pillar: Dropshipping (broad trend-hunter, "Trending" collection)
+// Style for art: Classical oil painting / Renaissance / Hofmann-inspired
 // Pillar 1: Scripture Wall Art (POD)
 // Pillar 2: Digital Faith Products (wallpapers, devotionals)
-// Pillar 3: Trending Dropshipping (faith-aligned)
+// Pillar 3: Trending Dropshipping (BROAD - viral physical products)
 // Pillar 4: Apparel POD (Christian tees, hoodies)
 
 const express = require('express');
@@ -164,9 +165,9 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v7 - Faith-Based Empire (Bestseller Aesthetic)',
-    theme: 'Christian Wall Art - Classical Oil Painting Style',
-    art_style: 'Hofmann / Caravaggio / Renaissance religious art',
+    version: 'v8 - Faith Empire + Dropship Engine',
+    theme: 'Christian Brand + Broad Dropship',
+    art_style: 'Classical oil painting / Renaissance / Hofmann-inspired',
     store: SHOPIFY_STORE,
     pillars: {
       scripture_wall_art: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
@@ -193,7 +194,7 @@ app.get('/', (req, res) => {
       shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
       tiktok_post: !!TIKTOK_ACCESS_TOKEN,
     },
-    message: 'UD Store Agent v7 - Faith-Based Empire targeting bestseller Christian wall art aesthetic'
+    message: 'UD Store Agent v8 - Christian brand pillars + broad dropship engine'
   });
 });
 
@@ -1507,11 +1508,453 @@ Output ONLY the JSON object.`
 });
 
 // ============================================================
+// ========== 🛍️ DROPSHIPPING - SMART PIPELINES ==========
+// ============================================================
+
+// Helper: build supplier search URLs for a product
+function buildSupplierLinks(searchTerm) {
+  const encoded = encodeURIComponent(searchTerm);
+  return {
+    aliexpress: `https://www.aliexpress.us/w/wholesale-${encoded.replace(/%20/g, '-')}.html`,
+    cj_dropshipping: `https://app.cjdropshipping.com/myCJ.htm#/list/list?searchKey=${encoded}`,
+    spocket: `https://app.spocket.co/search?text=${encoded}`,
+    amazon: `https://www.amazon.com/s?k=${encoded}`,
+    google_shopping: `https://www.google.com/search?tbm=shop&q=${encoded}`,
+  };
+}
+
+// Helper: ensure a "Trending" collection exists in Shopify
+async function ensureTrendingCollection() {
+  try {
+    const collections = await shopifyRequest('custom_collections.json?limit=250');
+    const existing = collections.custom_collections?.find(c => c.title === 'Trending');
+    if (existing) return existing;
+    
+    const created = await shopifyRequest('custom_collections.json', 'POST', {
+      custom_collection: {
+        title: 'Trending',
+        body_html: '<p>Hot trending products handpicked by our AI agent.</p>',
+        published: false, // unpublished by default
+      },
+    });
+    return created.custom_collection;
+  } catch (e) {
+    console.error('Collection setup failed:', e.message);
+    return null;
+  }
+}
+
+// Helper: add product to collection
+async function addProductToCollection(productId, collectionId) {
+  try {
+    await shopifyRequest('collects.json', 'POST', {
+      collect: { product_id: productId, collection_id: collectionId },
+    });
+    return true;
+  } catch (e) {
+    console.error('Failed to add to collection:', e.message);
+    return false;
+  }
+}
+
+// ===== AUTO-DROPSHIP: The MEGA endpoint =====
+// 1. Discovers current trends via web search
+// 2. Picks best opportunity
+// 3. Generates full Shopify listing(s)
+// 4. Adds to "Trending" collection (always draft)
+// 5. Returns complete sourcing + marketing package
+app.post('/api/pipeline/auto-dropship', async (req, res) => {
+  try {
+    if (!ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ANTHROPIC_API_KEY not set' });
+    if (!OPENAI_API_KEY) return res.status(400).json({ error: 'OPENAI_API_KEY not set' });
+    if (!SHOPIFY_ACCESS_TOKEN) return res.status(400).json({ error: 'SHOPIFY_ACCESS_TOKEN not set' });
+
+    const {
+      count = 1, // how many trending products to list
+      focus = 'physical products that are viral on TikTok right now', // niche/category focus
+      target_audience = 'broad consumer audience',
+      markup_multiplier = 2.8, // 2.8x markup is standard for dropshipping
+      add_to_trending_collection = true,
+    } = req.body;
+
+    if (count > 5) return res.status(400).json({ error: 'Max 5 per call (rate limits)' });
+
+    const log = [];
+    const claude = getClaude();
+
+    // Step 1: Discover trending dropship-worthy products via web search
+    log.push(`Searching the web for ${count} trending dropship products...`);
+    const trendsR = await claude.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 3000,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [{
+        role: 'user',
+        content: `Find ${count} TRENDING physical products viral RIGHT NOW that someone could DROPSHIP.
+
+Focus: ${focus}
+Audience: ${target_audience}
+
+Search the web for:
+- TikTok viral product trends (search "tiktok viral products 2026")
+- Amazon Movers & Shakers
+- Trending products on AliExpress
+- Reddit /r/BuyItForLife and shopping subreddits
+- Instagram reels viral products
+
+CRITICAL FILTERS:
+- Must be a PHYSICAL product (not digital)
+- Must be DROPSHIPPABLE (available from suppliers like AliExpress/CJ/Spocket)
+- Must have HIGH PROFIT POTENTIAL (cheap to source, sells for 2-4x markup)
+- Must have CURRENT VIRAL MOMENTUM (selling NOW, not 6 months ago)
+- Avoid copyrighted/branded items (Disney, sports teams, etc.)
+
+Reply with ONLY raw JSON:
+{
+  "trends": [
+    {
+      "product_name": "specific product name",
+      "category": "category (Beauty/Tech/Home/Pets/etc)",
+      "why_viral": "1-2 sentence explanation of current virality",
+      "estimated_supplier_cost_usd": 8.50,
+      "suggested_retail_price_usd": 24.99,
+      "supplier_search_terms": "exact keywords for AliExpress search",
+      "best_supplier_platform": "AliExpress OR CJ Dropshipping OR Spocket",
+      "supplier_reasoning": "why this platform is best for this product",
+      "shopify_title": "compelling product title under 70 chars",
+      "shopify_description_html": "<p>full HTML description with <ul><li> bullet points - benefits, features, urgency push</p>",
+      "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+      "image_prompt": "DALL-E prompt for placeholder product photo",
+      "tiktok_hook": "viral 3-second hook",
+      "tiktok_caption": "full caption with emojis and CTA",
+      "tiktok_hashtags": "#tag1 #tag2 #tag3"
+    }
+  ]
+}
+
+Output ONLY the JSON object. Nothing else.`
+      }]
+    });
+
+    const trendsText = getAllText(trendsR.content);
+    const trendsData = extractJSON(trendsText);
+    if (!trendsData?.trends?.length) {
+      return res.status(500).json({ error: 'Could not parse trends', debug: trendsText.substring(0, 500) });
+    }
+    log.push(`✅ Found ${trendsData.trends.length} trending products`);
+
+    // Step 2: Set up Trending collection if needed
+    let trendingCollection = null;
+    if (add_to_trending_collection) {
+      trendingCollection = await ensureTrendingCollection();
+      if (trendingCollection) log.push(`✅ Trending collection ready (id: ${trendingCollection.id})`);
+    }
+
+    // Step 3: For each trend, create a Shopify draft listing
+    const results = [];
+    for (let i = 0; i < trendsData.trends.length; i++) {
+      const trend = trendsData.trends[i];
+      try {
+        log.push(`Processing #${i + 1}: ${trend.product_name}...`);
+
+        // Generate placeholder image
+        const photoPrompt = `Professional product photography: ${trend.image_prompt || trend.product_name}. Studio lighting, white background, sharp focus, commercial quality, high-end e-commerce style.`;
+        const imageResult = await generateDalleImage(photoPrompt, { size: '1024x1024', quality: 'standard' });
+
+        // Calculate retail price
+        const retailPrice = trend.suggested_retail_price_usd || (trend.estimated_supplier_cost_usd * markup_multiplier);
+        const compareAt = retailPrice * 1.4; // 40% "discount" optical
+
+        // Build supplier links
+        const supplierLinks = buildSupplierLinks(trend.supplier_search_terms || trend.product_name);
+
+        // Build the product description with embedded sourcing notes (will be cleaned before publishing)
+        const enrichedDescription = `${trend.shopify_description_html}
+
+<hr style="margin: 30px 0; border: 1px dashed #ccc;">
+<div style="background: #fff8e1; padding: 15px; border-radius: 8px; font-size: 12px; color: #666;">
+<strong>📦 INTERNAL SOURCING NOTES (DELETE BEFORE PUBLISHING):</strong>
+<ul>
+  <li><strong>Why viral:</strong> ${trend.why_viral}</li>
+  <li><strong>Supplier search:</strong> ${trend.supplier_search_terms}</li>
+  <li><strong>Best platform:</strong> ${trend.best_supplier_platform} - ${trend.supplier_reasoning}</li>
+  <li><strong>Supplier cost:</strong> $${trend.estimated_supplier_cost_usd}</li>
+  <li><strong>Suggested retail:</strong> $${retailPrice}</li>
+  <li><strong>Profit per sale:</strong> $${(retailPrice - trend.estimated_supplier_cost_usd).toFixed(2)}</li>
+  <li><strong>Margin:</strong> ${(((retailPrice - trend.estimated_supplier_cost_usd) / retailPrice) * 100).toFixed(0)}%</li>
+</ul>
+<p><strong>Find supplier:</strong></p>
+<ul>
+  <li><a href="${supplierLinks.aliexpress}">Search AliExpress</a></li>
+  <li><a href="${supplierLinks.cj_dropshipping}">Search CJ Dropshipping</a></li>
+  <li><a href="${supplierLinks.spocket}">Search Spocket</a></li>
+  <li><a href="${supplierLinks.amazon}">Search Amazon</a></li>
+</ul>
+<p><strong>📱 TikTok Marketing:</strong></p>
+<ul>
+  <li><strong>Hook:</strong> ${trend.tiktok_hook}</li>
+  <li><strong>Caption:</strong> ${trend.tiktok_caption}</li>
+  <li><strong>Hashtags:</strong> ${trend.tiktok_hashtags}</li>
+</ul>
+</div>`;
+
+        // Create Shopify draft product
+        const productPayload = {
+          product: {
+            title: trend.shopify_title,
+            body_html: enrichedDescription,
+            vendor: 'UD Store',
+            product_type: 'Trending',
+            tags: [...(trend.tags || []), 'dropship', 'trending', 'auto-generated'].join(', '),
+            status: 'draft', // ALWAYS draft mode (per Udo's spec)
+            variants: [{
+              price: String(retailPrice.toFixed(2)),
+              compare_at_price: String(compareAt.toFixed(2)),
+              inventory_quantity: 100,
+              inventory_management: null,
+              requires_shipping: true,
+              taxable: true,
+            }],
+            images: [{ src: imageResult.url }],
+          }
+        };
+
+        const shopifyProduct = await shopifyRequest('products.json', 'POST', productPayload);
+
+        // Add to trending collection
+        if (trendingCollection) {
+          await addProductToCollection(shopifyProduct.product.id, trendingCollection.id);
+        }
+
+        results.push({
+          success: true,
+          shopify_product_id: shopifyProduct.product.id,
+          title: trend.shopify_title,
+          category: trend.category,
+          why_viral: trend.why_viral,
+          pricing: {
+            supplier_cost: trend.estimated_supplier_cost_usd,
+            retail: retailPrice,
+            profit_per_sale: (retailPrice - trend.estimated_supplier_cost_usd).toFixed(2),
+            margin_percent: (((retailPrice - trend.estimated_supplier_cost_usd) / retailPrice) * 100).toFixed(1) + '%',
+          },
+          sourcing: {
+            search_terms: trend.supplier_search_terms,
+            best_platform: trend.best_supplier_platform,
+            reasoning: trend.supplier_reasoning,
+            supplier_links: supplierLinks,
+          },
+          marketing: {
+            tiktok_hook: trend.tiktok_hook,
+            tiktok_caption: trend.tiktok_caption,
+            tiktok_hashtags: trend.tiktok_hashtags,
+          },
+          image_url: imageResult.url,
+        });
+
+        log.push(`✅ Created draft: ${trend.shopify_title}`);
+      } catch (err) {
+        results.push({
+          success: false,
+          product_name: trend.product_name,
+          error: err.response?.data?.errors || err.message,
+        });
+        log.push(`❌ Failed #${i + 1}: ${err.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      pillar: 'dropshipping',
+      log,
+      summary: {
+        attempted: trendsData.trends.length,
+        created: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        collection: trendingCollection ? trendingCollection.title : null,
+      },
+      products: results,
+      next_steps: [
+        '1. Review each draft listing in Shopify admin → Products',
+        '2. For each one, use the supplier links to find a real supplier',
+        '3. Order a sample to verify quality',
+        '4. Install DSers app on Shopify to auto-fulfill orders',
+        '5. Connect each product to its supplier in DSers',
+        '6. Delete the "Internal Sourcing Notes" section from product description',
+        '7. Set product status from "draft" to "active" to go live',
+        '8. Use the TikTok content to drive traffic',
+      ],
+    });
+  } catch (e) {
+    console.error('Auto-dropship error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.message || e.message });
+  }
+});
+
+// ===== Single trend → dropship listing =====
+// Take a specific trend object and create a single dropship listing
+app.post('/api/pipeline/dropship-from-trend', async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) return res.status(400).json({ error: 'OPENAI_API_KEY not set' });
+    if (!SHOPIFY_ACCESS_TOKEN) return res.status(400).json({ error: 'SHOPIFY_ACCESS_TOKEN not set' });
+    if (!ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ANTHROPIC_API_KEY not set' });
+
+    const {
+      trend, // pass a trend object from /api/trends/discover
+      product_idea, // OR just a product idea string
+      markup_multiplier = 2.8,
+      add_to_trending_collection = true,
+    } = req.body;
+
+    if (!trend && !product_idea) {
+      return res.status(400).json({ error: 'Either trend or product_idea required' });
+    }
+
+    const productInfo = product_idea || (typeof trend === 'object' ? trend.name || JSON.stringify(trend) : trend);
+
+    // Generate full listing copy with Claude
+    const claude = getClaude();
+    const research = await claude.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      messages: [{
+        role: 'user',
+        content: `Generate a complete Shopify dropship product listing for: "${productInfo}"
+
+Reply with ONLY raw JSON:
+{
+  "shopify_title": "compelling product title under 70 chars",
+  "shopify_description_html": "<p>full HTML description with <ul><li> bullet points</p>",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "estimated_supplier_cost_usd": 12.50,
+  "suggested_retail_price_usd": 29.99,
+  "supplier_search_terms": "exact keywords for AliExpress",
+  "best_supplier_platform": "AliExpress OR CJ Dropshipping OR Spocket",
+  "supplier_reasoning": "why this platform",
+  "image_prompt": "DALL-E prompt for product photo",
+  "tiktok_hook": "viral 3-second hook",
+  "tiktok_caption": "TikTok caption with emojis",
+  "tiktok_hashtags": "#tag1 #tag2 #tag3"
+}`
+      }]
+    });
+
+    const data = extractJSON(getAllText(research.content));
+    if (!data) return res.status(500).json({ error: 'Could not parse Claude response' });
+
+    // Generate placeholder image
+    const photoPrompt = `Professional product photography: ${data.image_prompt || productInfo}. Studio lighting, clean background, commercial quality.`;
+    const imageResult = await generateDalleImage(photoPrompt, { size: '1024x1024', quality: 'standard' });
+
+    const retailPrice = data.suggested_retail_price_usd || (data.estimated_supplier_cost_usd * markup_multiplier);
+    const supplierLinks = buildSupplierLinks(data.supplier_search_terms || productInfo);
+
+    const enrichedDescription = `${data.shopify_description_html}
+
+<hr style="margin: 30px 0; border: 1px dashed #ccc;">
+<div style="background: #fff8e1; padding: 15px; border-radius: 8px; font-size: 12px; color: #666;">
+<strong>📦 INTERNAL SOURCING NOTES (DELETE BEFORE PUBLISHING):</strong>
+<ul>
+  <li><strong>Search:</strong> ${data.supplier_search_terms}</li>
+  <li><strong>Best platform:</strong> ${data.best_supplier_platform}</li>
+  <li><strong>Cost:</strong> $${data.estimated_supplier_cost_usd} | <strong>Retail:</strong> $${retailPrice}</li>
+</ul>
+<p><strong>Suppliers:</strong> <a href="${supplierLinks.aliexpress}">AliExpress</a> | <a href="${supplierLinks.cj_dropshipping}">CJ</a> | <a href="${supplierLinks.spocket}">Spocket</a></p>
+<p><strong>TikTok:</strong> ${data.tiktok_hook}</p>
+</div>`;
+
+    const productPayload = {
+      product: {
+        title: data.shopify_title,
+        body_html: enrichedDescription,
+        vendor: 'UD Store',
+        product_type: 'Trending',
+        tags: [...(data.tags || []), 'dropship', 'trending', 'auto-generated'].join(', '),
+        status: 'draft',
+        variants: [{
+          price: String(retailPrice.toFixed(2)),
+          compare_at_price: String((retailPrice * 1.4).toFixed(2)),
+          inventory_quantity: 100,
+          inventory_management: null,
+          requires_shipping: true,
+          taxable: true,
+        }],
+        images: [{ src: imageResult.url }],
+      }
+    };
+
+    const shopifyProduct = await shopifyRequest('products.json', 'POST', productPayload);
+
+    // Add to collection
+    let collection = null;
+    if (add_to_trending_collection) {
+      collection = await ensureTrendingCollection();
+      if (collection) {
+        await addProductToCollection(shopifyProduct.product.id, collection.id);
+      }
+    }
+
+    res.json({
+      success: true,
+      pillar: 'dropshipping',
+      shopify_product_id: shopifyProduct.product.id,
+      title: data.shopify_title,
+      pricing: {
+        supplier_cost: data.estimated_supplier_cost_usd,
+        retail: retailPrice,
+        profit_per_sale: (retailPrice - data.estimated_supplier_cost_usd).toFixed(2),
+        margin_percent: (((retailPrice - data.estimated_supplier_cost_usd) / retailPrice) * 100).toFixed(1) + '%',
+      },
+      sourcing: {
+        best_platform: data.best_supplier_platform,
+        search_terms: data.supplier_search_terms,
+        supplier_links: supplierLinks,
+      },
+      marketing: {
+        tiktok_hook: data.tiktok_hook,
+        tiktok_caption: data.tiktok_caption,
+        tiktok_hashtags: data.tiktok_hashtags,
+      },
+      image_url: imageResult.url,
+      collection: collection?.title,
+    });
+  } catch (e) {
+    console.error('Dropship-from-trend error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.message || e.message });
+  }
+});
+
+// ===== Shopify Collection Management =====
+app.get('/api/shopify/collections', async (req, res) => {
+  try {
+    res.json(await shopifyRequest('custom_collections.json?limit=250'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/shopify/create-collection', async (req, res) => {
+  try {
+    const { title, body_html = '', published = false } = req.body;
+    if (!title) return res.status(400).json({ error: 'title required' });
+    const result = await shopifyRequest('custom_collections.json', 'POST', {
+      custom_collection: { title, body_html, published },
+    });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/shopify/setup-trending-collection', async (req, res) => {
+  try {
+    const collection = await ensureTrendingCollection();
+    res.json({ success: true, collection });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================================
 app.listen(PORT, () => {
-  console.log(`🚀 UD Store Agent v7 (Faith-Based Empire - Bestseller Aesthetic) on port ${PORT}`);
+  console.log(`🚀 UD Store Agent v8 (Faith Empire + Dropship Engine) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
-  console.log(`🙏 Theme: Christian Wall Art - Classical Oil Painting Style`);
-  console.log(`🎨 Targeting: Hofmann / Caravaggio / Renaissance religious art aesthetic`);
+  console.log(`🙏 Brand: Christian Wall Art / Apparel / Digital`);
+  console.log(`🛍️ Dropship: Broad trend hunter (separate "Trending" collection)`);
   console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} (shop: ${PRINTIFY_SHOP_ID || 'none'}) | TikTok: ${!!TIKTOK_ACCESS_TOKEN}`);
   console.log(`🏛️ Pillars: Scripture Wall Art ✓ Digital Faith ✓ Dropshipping ✓ Apparel ✓`);
 });
