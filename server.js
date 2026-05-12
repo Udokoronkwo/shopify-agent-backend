@@ -1,10 +1,10 @@
-// Shopify AI Agent Backend v8 - Faith Empire + Dropship Engine
+// Shopify AI Agent Backend v9 - Faith Empire + Smart Dropship
 // Brand pillars: Scripture Wall Art / Apparel / Digital (all Christian)
-// Volume pillar: Dropshipping (broad trend-hunter, "Trending" collection)
-// Style for art: Classical oil painting / Renaissance / Hofmann-inspired
+// Volume pillar: Dropshipping (broad, real supplier photos by default)
+// NEW IN v9: include_ai_image flag for dropship (default OFF - real photos = trust)
 // Pillar 1: Scripture Wall Art (POD)
 // Pillar 2: Digital Faith Products (wallpapers, devotionals)
-// Pillar 3: Trending Dropshipping (BROAD - viral physical products)
+// Pillar 3: Trending Dropshipping (BROAD - real photos only)
 // Pillar 4: Apparel POD (Christian tees, hoodies)
 
 const express = require('express');
@@ -165,8 +165,8 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v8 - Faith Empire + Dropship Engine',
-    theme: 'Christian Brand + Broad Dropship',
+    version: 'v9 - Faith Empire + Smart Dropship',
+    theme: 'Christian Brand + Broad Dropship (real photos)',
     art_style: 'Classical oil painting / Renaissance / Hofmann-inspired',
     store: SHOPIFY_STORE,
     pillars: {
@@ -194,7 +194,7 @@ app.get('/', (req, res) => {
       shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
       tiktok_post: !!TIKTOK_ACCESS_TOKEN,
     },
-    message: 'UD Store Agent v8 - Christian brand pillars + broad dropship engine'
+    message: 'UD Store Agent v9 - Christian brand pillars + smart dropship (real supplier photos)'
   });
 });
 
@@ -1575,6 +1575,7 @@ app.post('/api/pipeline/auto-dropship', async (req, res) => {
       target_audience = 'broad consumer audience',
       markup_multiplier = 2.8, // 2.8x markup is standard for dropshipping
       add_to_trending_collection = true,
+      include_ai_image = false, // DEFAULT FALSE for dropshipping - real supplier photos are more trustworthy
     } = req.body;
 
     if (count > 5) return res.status(400).json({ error: 'Max 5 per call (rate limits)' });
@@ -1657,9 +1658,12 @@ Output ONLY the JSON object. Nothing else.`
       try {
         log.push(`Processing #${i + 1}: ${trend.product_name}...`);
 
-        // Generate placeholder image
-        const photoPrompt = `Professional product photography: ${trend.image_prompt || trend.product_name}. Studio lighting, white background, sharp focus, commercial quality, high-end e-commerce style.`;
-        const imageResult = await generateDalleImage(photoPrompt, { size: '1024x1024', quality: 'standard' });
+        // Generate placeholder image ONLY if requested (default OFF for dropship - use real supplier photos)
+        let imageResult = null;
+        if (include_ai_image) {
+          const photoPrompt = `Professional product photography: ${trend.image_prompt || trend.product_name}. Studio lighting, white background, sharp focus, commercial quality, high-end e-commerce style.`;
+          imageResult = await generateDalleImage(photoPrompt, { size: '1024x1024', quality: 'standard' });
+        }
 
         // Calculate retail price
         const retailPrice = trend.suggested_retail_price_usd || (trend.estimated_supplier_cost_usd * markup_multiplier);
@@ -1715,7 +1719,7 @@ Output ONLY the JSON object. Nothing else.`
               requires_shipping: true,
               taxable: true,
             }],
-            images: [{ src: imageResult.url }],
+            images: imageResult ? [{ src: imageResult.url }] : [],
           }
         };
 
@@ -1749,10 +1753,11 @@ Output ONLY the JSON object. Nothing else.`
             tiktok_caption: trend.tiktok_caption,
             tiktok_hashtags: trend.tiktok_hashtags,
           },
-          image_url: imageResult.url,
+          image_url: imageResult ? imageResult.url : null,
+          image_note: imageResult ? 'AI placeholder - replace with real supplier photos before publishing' : 'No AI image - add real supplier photos from AliExpress before publishing',
         });
 
-        log.push(`✅ Created draft: ${trend.shopify_title}`);
+        log.push(`✅ Created draft: ${trend.shopify_title}${imageResult ? ' (with AI placeholder)' : ' (no image - add real supplier photos)'}`);
       } catch (err) {
         results.push({
           success: false,
@@ -1776,13 +1781,16 @@ Output ONLY the JSON object. Nothing else.`
       products: results,
       next_steps: [
         '1. Review each draft listing in Shopify admin → Products',
-        '2. For each one, use the supplier links to find a real supplier',
-        '3. Order a sample to verify quality',
-        '4. Install DSers app on Shopify to auto-fulfill orders',
-        '5. Connect each product to its supplier in DSers',
-        '6. Delete the "Internal Sourcing Notes" section from product description',
-        '7. Set product status from "draft" to "active" to go live',
-        '8. Use the TikTok content to drive traffic',
+        '2. Click the supplier links in the product description to find a real supplier',
+        '3. Choose supplier with 1000+ orders, 4.7+ stars',
+        '4. ⭐ SAVE the supplier\'s actual product photos (right-click → save image)',
+        '5. ⭐ Upload those REAL photos to your Shopify product (replace any AI placeholder)',
+        '6. Order a sample to verify quality (~$5)',
+        '7. Install DSers app on Shopify to auto-fulfill orders',
+        '8. Connect each product to its supplier in DSers',
+        '9. Delete the "Internal Sourcing Notes" section from product description',
+        '10. Set product status from "draft" to "active" to go live',
+        '11. Use the TikTok content to drive traffic',
       ],
     });
   } catch (e) {
@@ -1804,6 +1812,7 @@ app.post('/api/pipeline/dropship-from-trend', async (req, res) => {
       product_idea, // OR just a product idea string
       markup_multiplier = 2.8,
       add_to_trending_collection = true,
+      include_ai_image = false, // DEFAULT FALSE - use real supplier photos for trust
     } = req.body;
 
     if (!trend && !product_idea) {
@@ -1842,9 +1851,12 @@ Reply with ONLY raw JSON:
     const data = extractJSON(getAllText(research.content));
     if (!data) return res.status(500).json({ error: 'Could not parse Claude response' });
 
-    // Generate placeholder image
-    const photoPrompt = `Professional product photography: ${data.image_prompt || productInfo}. Studio lighting, clean background, commercial quality.`;
-    const imageResult = await generateDalleImage(photoPrompt, { size: '1024x1024', quality: 'standard' });
+    // Generate placeholder image ONLY if requested (default OFF for dropship)
+    let imageResult = null;
+    if (include_ai_image) {
+      const photoPrompt = `Professional product photography: ${data.image_prompt || productInfo}. Studio lighting, clean background, commercial quality.`;
+      imageResult = await generateDalleImage(photoPrompt, { size: '1024x1024', quality: 'standard' });
+    }
 
     const retailPrice = data.suggested_retail_price_usd || (data.estimated_supplier_cost_usd * markup_multiplier);
     const supplierLinks = buildSupplierLinks(data.supplier_search_terms || productInfo);
@@ -1861,6 +1873,7 @@ Reply with ONLY raw JSON:
 </ul>
 <p><strong>Suppliers:</strong> <a href="${supplierLinks.aliexpress}">AliExpress</a> | <a href="${supplierLinks.cj_dropshipping}">CJ</a> | <a href="${supplierLinks.spocket}">Spocket</a></p>
 <p><strong>TikTok:</strong> ${data.tiktok_hook}</p>
+<p><strong>⚠️ ADD REAL SUPPLIER PHOTOS</strong> from AliExpress before publishing!</p>
 </div>`;
 
     const productPayload = {
@@ -1879,7 +1892,7 @@ Reply with ONLY raw JSON:
           requires_shipping: true,
           taxable: true,
         }],
-        images: [{ src: imageResult.url }],
+        images: imageResult ? [{ src: imageResult.url }] : [],
       }
     };
 
@@ -1915,7 +1928,8 @@ Reply with ONLY raw JSON:
         tiktok_caption: data.tiktok_caption,
         tiktok_hashtags: data.tiktok_hashtags,
       },
-      image_url: imageResult.url,
+      image_url: imageResult ? imageResult.url : null,
+      image_note: imageResult ? 'AI placeholder' : 'No image - add real supplier photos before publishing',
       collection: collection?.title,
     });
   } catch (e) {
@@ -1951,10 +1965,10 @@ app.post('/api/shopify/setup-trending-collection', async (req, res) => {
 
 // ============================================================
 app.listen(PORT, () => {
-  console.log(`🚀 UD Store Agent v8 (Faith Empire + Dropship Engine) on port ${PORT}`);
+  console.log(`🚀 UD Store Agent v9 (Faith Empire + Smart Dropship) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
   console.log(`🙏 Brand: Christian Wall Art / Apparel / Digital`);
-  console.log(`🛍️ Dropship: Broad trend hunter (separate "Trending" collection)`);
+  console.log(`🛍️ Dropship: Broad, real supplier photos by default (no fake AI photos)`);
   console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} (shop: ${PRINTIFY_SHOP_ID || 'none'}) | TikTok: ${!!TIKTOK_ACCESS_TOKEN}`);
   console.log(`🏛️ Pillars: Scripture Wall Art ✓ Digital Faith ✓ Dropshipping ✓ Apparel ✓`);
 });
