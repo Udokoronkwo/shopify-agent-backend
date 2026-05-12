@@ -29,7 +29,13 @@ const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
 // CJ Dropshipping - for auto product import with real photos
 const CJ_API_KEY = process.env.CJ_API_KEY;
+const CJ_EMAIL = process.env.CJ_EMAIL;
+const CJ_PASSWORD = process.env.CJ_PASSWORD;
 const CJ_API_BASE = 'https://developers.cjdropshipping.com/api2.0/v1';
+
+// Cached CJ access token (refreshed automatically when expired)
+let CJ_ACCESS_TOKEN = null;
+let CJ_TOKEN_EXPIRES_AT = 0;
 
 let SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 
@@ -169,7 +175,7 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v11 - CJ Auto-Import Edition',
+    version: 'v11.1 - CJ Auto-Import (proper auth)',
     theme: 'Christian Brand + CJ Dropshipping (real photos auto-imported)',
     art_style: 'Classical oil painting / Renaissance / Hofmann-inspired',
     store: SHOPIFY_STORE,
@@ -177,7 +183,7 @@ app.get('/', (req, res) => {
       scripture_wall_art: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
       digital_faith_products: !!(OPENAI_API_KEY && SHOPIFY_ACCESS_TOKEN),
       dropshipping: !!(ANTHROPIC_API_KEY && SHOPIFY_ACCESS_TOKEN),
-      cj_dropshipping: !!(CJ_API_KEY && SHOPIFY_ACCESS_TOKEN),
+      cj_dropshipping: !!(CJ_EMAIL && CJ_PASSWORD && SHOPIFY_ACCESS_TOKEN),
       apparel_pod: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
     },
     shopify_connected: !!SHOPIFY_ACCESS_TOKEN,
@@ -186,7 +192,7 @@ app.get('/', (req, res) => {
     printify_connected: !!PRINTIFY_API_KEY,
     printify_shop_id: PRINTIFY_SHOP_ID || null,
     tiktok_connected: !!TIKTOK_ACCESS_TOKEN,
-    cj_connected: !!CJ_API_KEY,
+    cj_connected: !!(CJ_EMAIL && CJ_PASSWORD),
     capabilities: {
       trend_discovery: !!ANTHROPIC_API_KEY,
       product_ideation: !!ANTHROPIC_API_KEY,
@@ -197,7 +203,7 @@ app.get('/', (req, res) => {
       printify_create_wall_art: !!(PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
       digital_pack_create: !!(OPENAI_API_KEY && SHOPIFY_ACCESS_TOKEN),
       dropship_listing_create: !!SHOPIFY_ACCESS_TOKEN,
-      cj_auto_import: !!(CJ_API_KEY && SHOPIFY_ACCESS_TOKEN),
+      cj_auto_import: !!(CJ_EMAIL && CJ_PASSWORD && SHOPIFY_ACCESS_TOKEN),
       shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
       tiktok_post: !!TIKTOK_ACCESS_TOKEN,
     },
@@ -2061,15 +2067,55 @@ app.post('/api/shopify/setup-trending-collection', async (req, res) => {
 // Real product catalog with real photos + auto-fulfillment
 // ============================================================
 
-// Helper: make authenticated CJ API request
+// Helper: get a fresh CJ access token via email/password
+// CJ tokens last 15 days; we refresh proactively at 14 days
+async function getCJAccessToken() {
+  // Return cached token if still valid
+  if (CJ_ACCESS_TOKEN && Date.now() < CJ_TOKEN_EXPIRES_AT) {
+    return CJ_ACCESS_TOKEN;
+  }
+  
+  if (!CJ_EMAIL || !CJ_PASSWORD) {
+    throw new Error('CJ_EMAIL and CJ_PASSWORD must be set in Railway env vars');
+  }
+  
+  const authUrl = `${CJ_API_BASE}/authentication/getAccessToken`;
+  const r = await fetch(authUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: CJ_EMAIL, password: CJ_PASSWORD }),
+  });
+  
+  const text = await r.text();
+  let data;
+  try { data = JSON.parse(text); } catch (e) { data = { rawResponse: text }; }
+  
+  if (!r.ok || data.result === false) {
+    throw new Error(`CJ auth failed (${r.status}): ${data.message || data.msg || text.substring(0, 200)}`);
+  }
+  
+  const token = data.data?.accessToken;
+  if (!token) {
+    throw new Error('CJ auth response missing accessToken: ' + JSON.stringify(data).substring(0, 300));
+  }
+  
+  CJ_ACCESS_TOKEN = token;
+  // Cache for 14 days (1 day before actual 15-day expiry)
+  CJ_TOKEN_EXPIRES_AT = Date.now() + (14 * 24 * 60 * 60 * 1000);
+  
+  console.log(`✅ CJ access token refreshed. Expires: ${new Date(CJ_TOKEN_EXPIRES_AT).toISOString()}`);
+  return CJ_ACCESS_TOKEN;
+}
+
+// Helper: make authenticated CJ API request (auto-fetches token)
 async function cjRequest(path, method = 'GET', body = null) {
-  if (!CJ_API_KEY) throw new Error('CJ_API_KEY not set in Railway env vars');
+  const token = await getCJAccessToken();
   
   const url = `${CJ_API_BASE}${path}`;
   const options = {
     method,
     headers: {
-      'CJ-Access-Token': CJ_API_KEY,
+      'CJ-Access-Token': token,
       'Content-Type': 'application/json',
     },
   };
@@ -2081,10 +2127,14 @@ async function cjRequest(path, method = 'GET', body = null) {
   try { data = JSON.parse(text); } catch (e) { data = { rawResponse: text }; }
   
   if (!r.ok) {
+    // If token expired mid-flight, clear cache so next call gets fresh one
+    if (r.status === 401) {
+      CJ_ACCESS_TOKEN = null;
+      CJ_TOKEN_EXPIRES_AT = 0;
+    }
     throw new Error(`CJ API error (${r.status}): ${data.message || data.msg || text.substring(0, 200)}`);
   }
   
-  // CJ API returns { result: true, message: "...", data: {...} }
   if (data.result === false) {
     throw new Error(`CJ error: ${data.message || data.msg || 'unknown'}`);
   }
@@ -2095,29 +2145,46 @@ async function cjRequest(path, method = 'GET', body = null) {
 // ===== Test endpoint - verify CJ connection works =====
 app.get('/api/cj/test', async (req, res) => {
   try {
-    if (!CJ_API_KEY) {
+    if (!CJ_EMAIL || !CJ_PASSWORD) {
       return res.status(400).json({ 
-        error: 'CJ_API_KEY not set in Railway',
-        instructions: 'Add CJ_API_KEY to Railway environment variables' 
+        error: 'CJ credentials not set',
+        instructions: 'Add CJ_EMAIL and CJ_PASSWORD to Railway environment variables',
+        current_state: {
+          CJ_EMAIL_set: !!CJ_EMAIL,
+          CJ_PASSWORD_set: !!CJ_PASSWORD,
+          CJ_API_KEY_set: !!CJ_API_KEY,
+        }
       });
     }
     
-    // Try a simple product search as a connection test
+    // Step 1: Get/refresh access token
+    const token = await getCJAccessToken();
+    
+    // Step 2: Try a simple product search as a connection test
     const result = await cjRequest('/product/list?pageNum=1&pageSize=5');
+    
     res.json({ 
       success: true, 
-      message: 'CJ API connected successfully!',
+      message: '🎉 CJ API connected successfully!',
+      access_token_preview: token.substring(0, 20) + '...',
+      token_cached_until: new Date(CJ_TOKEN_EXPIRES_AT).toISOString(),
       sample_products_count: result.data?.list?.length || 0,
-      cj_response_sample: {
-        result: result.result,
-        message: result.message,
-        total: result.data?.total,
-      }
+      total_products_available: result.data?.total,
+      first_product_preview: result.data?.list?.[0] ? {
+        name: result.data.list[0].productNameEn,
+        price: result.data.list[0].sellPrice,
+        category: result.data.list[0].categoryName,
+        has_image: !!result.data.list[0].productImage,
+      } : null,
     });
   } catch (e) {
     res.status(500).json({ 
       error: e.message,
-      hint: 'If you see "Invalid Token", regenerate the API key in CJ dashboard and update Railway' 
+      hint: 'Verify CJ_EMAIL and CJ_PASSWORD are correct in Railway',
+      cj_credentials_set: {
+        CJ_EMAIL_set: !!CJ_EMAIL,
+        CJ_PASSWORD_set: !!CJ_PASSWORD,
+      }
     });
   }
 });
@@ -2173,7 +2240,7 @@ app.get('/api/cj/product/:pid', async (req, res) => {
 app.post('/api/cj/import-to-shopify', async (req, res) => {
   try {
     if (!SHOPIFY_ACCESS_TOKEN) return res.status(400).json({ error: 'SHOPIFY_ACCESS_TOKEN not set' });
-    if (!CJ_API_KEY) return res.status(400).json({ error: 'CJ_API_KEY not set' });
+    if (!CJ_EMAIL || !CJ_PASSWORD) return res.status(400).json({ error: 'CJ_EMAIL and CJ_PASSWORD must be set in Railway' });
     
     const { 
       pid,  // CJ product ID
@@ -2345,7 +2412,7 @@ ${tiktokContent ? `
 // Searches CJ for products matching criteria, imports best matches to Shopify
 app.post('/api/pipeline/cj-auto-import', async (req, res) => {
   try {
-    if (!CJ_API_KEY) return res.status(400).json({ error: 'CJ_API_KEY not set' });
+    if (!CJ_EMAIL || !CJ_PASSWORD) return res.status(400).json({ error: 'CJ_EMAIL and CJ_PASSWORD must be set in Railway' });
     if (!SHOPIFY_ACCESS_TOKEN) return res.status(400).json({ error: 'SHOPIFY_ACCESS_TOKEN not set' });
     
     const {
@@ -2553,10 +2620,10 @@ ${tiktokContent ? `<p><strong>📱 TikTok:</strong> ${tiktokContent.hook}<br>${t
 
 // ============================================================
 app.listen(PORT, () => {
-  console.log(`🚀 UD Store Agent v11 (CJ Auto-Import Edition) on port ${PORT}`);
+  console.log(`🚀 UD Store Agent v11.1 (CJ Auto-Import - Proper Auth) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
   console.log(`🙏 Brand: Christian Wall Art / Apparel / Digital`);
   console.log(`🛍️ Dropship: CJ auto-import with REAL photos + auto-fulfillment ready`);
-  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} | TikTok: ${!!TIKTOK_ACCESS_TOKEN} | CJ: ${!!CJ_API_KEY}`);
+  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} | TikTok: ${!!TIKTOK_ACCESS_TOKEN} | CJ: ${!!(CJ_EMAIL && CJ_PASSWORD)}`);
   console.log(`🏛️ Pillars: Scripture Wall Art ✓ Digital Faith ✓ CJ Dropshipping ✓ Apparel ✓`);
 });
