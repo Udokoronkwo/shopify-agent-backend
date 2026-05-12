@@ -165,7 +165,7 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v9 - Faith Empire + Smart Dropship',
+    version: 'v9.1 - Faith Empire + Smart Dropship (better JSON parsing)',
     theme: 'Christian Brand + Broad Dropship (real photos)',
     art_style: 'Classical oil painting / Renaissance / Hofmann-inspired',
     store: SHOPIFY_STORE,
@@ -249,22 +249,65 @@ function getClaude() {
 
 function extractJSON(text) {
   if (!text) return null;
+  
+  // Strategy 1: Look for JSON inside ```json ... ``` code blocks
   const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (codeBlockMatch) {
     try { return JSON.parse(codeBlockMatch[1].trim()); } catch (e) {}
   }
-  const matches = [...text.matchAll(/\{[\s\S]*?\}/g)];
-  if (matches.length > 0) {
-    const sorted = matches.map(m => m[0]).sort((a, b) => b.length - a.length);
-    for (const candidate of sorted) {
-      try { return JSON.parse(candidate); } catch (e) {}
-    }
-  }
+  
+  // Strategy 2: Find from first { to last } (handles preamble + JSON)
+  // This is the most reliable for Claude responses with preamble text
   const firstBrace = text.indexOf('{');
   const lastBrace = text.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace > firstBrace) {
-    try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch (e) {}
+    const candidate = text.substring(firstBrace, lastBrace + 1);
+    try { return JSON.parse(candidate); } catch (e) {}
+    
+    // Strategy 2b: Try to clean common issues (trailing commas, smart quotes)
+    const cleaned = candidate
+      .replace(/,\s*}/g, '}')  // trailing comma before }
+      .replace(/,\s*]/g, ']')  // trailing comma before ]
+      .replace(/[\u201C\u201D]/g, '"')  // smart double quotes
+      .replace(/[\u2018\u2019]/g, "'"); // smart single quotes
+    try { return JSON.parse(cleaned); } catch (e) {}
   }
+  
+  // Strategy 3: Find largest balanced JSON object using brace counting
+  let bestObj = null;
+  let bestSize = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      let depth = 0;
+      let end = -1;
+      let inString = false;
+      let escape = false;
+      for (let j = i; j < text.length; j++) {
+        const ch = text[j];
+        if (escape) { escape = false; continue; }
+        if (ch === '\\') { escape = true; continue; }
+        if (ch === '"' && !escape) { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) { end = j; break; }
+        }
+      }
+      if (end > i) {
+        const candidate = text.substring(i, end + 1);
+        if (candidate.length > bestSize) {
+          try {
+            const parsed = JSON.parse(candidate);
+            bestObj = parsed;
+            bestSize = candidate.length;
+          } catch (e) {}
+        }
+      }
+    }
+  }
+  if (bestObj) return bestObj;
+  
   return null;
 }
 
@@ -1587,7 +1630,7 @@ app.post('/api/pipeline/auto-dropship', async (req, res) => {
     log.push(`Searching the web for ${count} trending dropship products...`);
     const trendsR = await claude.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 3000,
+      max_tokens: 6000,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       messages: [{
         role: 'user',
@@ -1610,7 +1653,14 @@ CRITICAL FILTERS:
 - Must have CURRENT VIRAL MOMENTUM (selling NOW, not 6 months ago)
 - Avoid copyrighted/branded items (Disney, sports teams, etc.)
 
-Reply with ONLY raw JSON:
+CRITICAL OUTPUT RULES:
+- Your response MUST start with the character "{" - no preamble, no explanation, no "Here's the JSON", no "Based on my research", nothing
+- Your response MUST end with "}"
+- NO markdown code fences (no \`\`\`json or \`\`\`)
+- NO text before or after the JSON object
+- Begin output immediately with the opening brace
+
+Required JSON structure:
 {
   "trends": [
     {
@@ -1633,7 +1683,7 @@ Reply with ONLY raw JSON:
   ]
 }
 
-Output ONLY the JSON object. Nothing else.`
+REMEMBER: Start your response with "{" immediately. No preamble.`
       }]
     });
 
