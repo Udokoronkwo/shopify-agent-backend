@@ -175,7 +175,7 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v11.1 - CJ Auto-Import (proper auth)',
+    version: 'v11.2 - CJ Auto-Import (with auth debugger)',
     theme: 'Christian Brand + CJ Dropshipping (real photos auto-imported)',
     art_style: 'Classical oil painting / Renaissance / Hofmann-inspired',
     store: SHOPIFY_STORE,
@@ -2067,7 +2067,7 @@ app.post('/api/shopify/setup-trending-collection', async (req, res) => {
 // Real product catalog with real photos + auto-fulfillment
 // ============================================================
 
-// Helper: get a fresh CJ access token via email/password
+// Helper: get a fresh CJ access token via email + API key (or password fallback)
 // CJ tokens last 15 days; we refresh proactively at 14 days
 async function getCJAccessToken() {
   // Return cached token if still valid
@@ -2075,36 +2075,56 @@ async function getCJAccessToken() {
     return CJ_ACCESS_TOKEN;
   }
   
-  if (!CJ_EMAIL || !CJ_PASSWORD) {
-    throw new Error('CJ_EMAIL and CJ_PASSWORD must be set in Railway env vars');
+  if (!CJ_EMAIL) {
+    throw new Error('CJ_EMAIL must be set in Railway env vars');
+  }
+  if (!CJ_API_KEY && !CJ_PASSWORD) {
+    throw new Error('Either CJ_API_KEY or CJ_PASSWORD must be set in Railway env vars');
   }
   
   const authUrl = `${CJ_API_BASE}/authentication/getAccessToken`;
-  const r = await fetch(authUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: CJ_EMAIL, password: CJ_PASSWORD }),
-  });
   
-  const text = await r.text();
-  let data;
-  try { data = JSON.parse(text); } catch (e) { data = { rawResponse: text }; }
-  
-  if (!r.ok || data.result === false) {
-    throw new Error(`CJ auth failed (${r.status}): ${data.message || data.msg || text.substring(0, 200)}`);
+  // CJ's API has historically used different field names. Try the most common combos
+  // in order of likelihood. Some accounts use the API Key, others use the login password.
+  const credentials = [];
+  if (CJ_API_KEY) {
+    credentials.push({ label: 'apiKey-as-password', body: { email: CJ_EMAIL, password: CJ_API_KEY } });
+    credentials.push({ label: 'apiKey-field', body: { email: CJ_EMAIL, apiKey: CJ_API_KEY } });
+  }
+  if (CJ_PASSWORD) {
+    credentials.push({ label: 'password-field', body: { email: CJ_EMAIL, password: CJ_PASSWORD } });
   }
   
-  const token = data.data?.accessToken;
-  if (!token) {
-    throw new Error('CJ auth response missing accessToken: ' + JSON.stringify(data).substring(0, 300));
+  let lastError = null;
+  for (const cred of credentials) {
+    try {
+      const r = await fetch(authUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cred.body),
+      });
+      
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch (e) { data = { rawResponse: text }; }
+      
+      // Check for actual success
+      const token = data.data?.accessToken;
+      if (r.ok && data.result !== false && token) {
+        CJ_ACCESS_TOKEN = token;
+        CJ_TOKEN_EXPIRES_AT = Date.now() + (14 * 24 * 60 * 60 * 1000);
+        console.log(`✅ CJ access token obtained via "${cred.label}". Expires: ${new Date(CJ_TOKEN_EXPIRES_AT).toISOString()}`);
+        return CJ_ACCESS_TOKEN;
+      }
+      
+      lastError = `[${cred.label}] HTTP ${r.status}: ${data.message || data.msg || text.substring(0, 150)}`;
+      console.log(`❌ CJ auth try "${cred.label}" failed: ${lastError}`);
+    } catch (e) {
+      lastError = `[${cred.label}] ${e.message}`;
+    }
   }
   
-  CJ_ACCESS_TOKEN = token;
-  // Cache for 14 days (1 day before actual 15-day expiry)
-  CJ_TOKEN_EXPIRES_AT = Date.now() + (14 * 24 * 60 * 60 * 1000);
-  
-  console.log(`✅ CJ access token refreshed. Expires: ${new Date(CJ_TOKEN_EXPIRES_AT).toISOString()}`);
-  return CJ_ACCESS_TOKEN;
+  throw new Error(`CJ auth failed after trying ${credentials.length} method(s). Last error: ${lastError}`);
 }
 
 // Helper: make authenticated CJ API request (auto-fetches token)
@@ -2127,7 +2147,6 @@ async function cjRequest(path, method = 'GET', body = null) {
   try { data = JSON.parse(text); } catch (e) { data = { rawResponse: text }; }
   
   if (!r.ok) {
-    // If token expired mid-flight, clear cache so next call gets fresh one
     if (r.status === 401) {
       CJ_ACCESS_TOKEN = null;
       CJ_TOKEN_EXPIRES_AT = 0;
@@ -2145,10 +2164,10 @@ async function cjRequest(path, method = 'GET', body = null) {
 // ===== Test endpoint - verify CJ connection works =====
 app.get('/api/cj/test', async (req, res) => {
   try {
-    if (!CJ_EMAIL || !CJ_PASSWORD) {
+    if (!CJ_EMAIL || (!CJ_API_KEY && !CJ_PASSWORD)) {
       return res.status(400).json({ 
         error: 'CJ credentials not set',
-        instructions: 'Add CJ_EMAIL and CJ_PASSWORD to Railway environment variables',
+        instructions: 'Need CJ_EMAIL plus either CJ_API_KEY or CJ_PASSWORD in Railway',
         current_state: {
           CJ_EMAIL_set: !!CJ_EMAIL,
           CJ_PASSWORD_set: !!CJ_PASSWORD,
@@ -2157,10 +2176,7 @@ app.get('/api/cj/test', async (req, res) => {
       });
     }
     
-    // Step 1: Get/refresh access token
     const token = await getCJAccessToken();
-    
-    // Step 2: Try a simple product search as a connection test
     const result = await cjRequest('/product/list?pageNum=1&pageSize=5');
     
     res.json({ 
@@ -2180,13 +2196,76 @@ app.get('/api/cj/test', async (req, res) => {
   } catch (e) {
     res.status(500).json({ 
       error: e.message,
-      hint: 'Verify CJ_EMAIL and CJ_PASSWORD are correct in Railway',
+      hint: 'Check /api/cj/auth-debug to see exact CJ response',
       cj_credentials_set: {
         CJ_EMAIL_set: !!CJ_EMAIL,
         CJ_PASSWORD_set: !!CJ_PASSWORD,
+        CJ_API_KEY_set: !!CJ_API_KEY,
       }
     });
   }
+});
+
+// ===== DEBUG: See raw CJ auth response =====
+// Tries each auth method and shows what CJ returns for each
+app.get('/api/cj/auth-debug', async (req, res) => {
+  const results = [];
+  
+  if (!CJ_EMAIL) {
+    return res.json({ error: 'CJ_EMAIL not set' });
+  }
+  
+  const authUrl = `${CJ_API_BASE}/authentication/getAccessToken`;
+  const attempts = [];
+  
+  if (CJ_API_KEY) {
+    attempts.push({ label: 'API key as password', body: { email: CJ_EMAIL, password: CJ_API_KEY } });
+    attempts.push({ label: 'API key as apiKey field', body: { email: CJ_EMAIL, apiKey: CJ_API_KEY } });
+  }
+  if (CJ_PASSWORD) {
+    attempts.push({ label: 'login password', body: { email: CJ_EMAIL, password: CJ_PASSWORD } });
+  }
+  
+  for (const attempt of attempts) {
+    try {
+      const r = await fetch(authUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(attempt.body),
+      });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch (e) { data = { rawResponse: text }; }
+      
+      results.push({
+        method: attempt.label,
+        body_sent_fields: Object.keys(attempt.body),
+        http_status: r.status,
+        response_result: data.result,
+        response_message: data.message || data.msg,
+        has_accessToken: !!data.data?.accessToken,
+        full_response: data,
+      });
+    } catch (e) {
+      results.push({
+        method: attempt.label,
+        error: e.message,
+      });
+    }
+  }
+  
+  res.json({
+    cj_email: CJ_EMAIL,
+    credentials_provided: {
+      CJ_EMAIL: !!CJ_EMAIL,
+      CJ_PASSWORD: !!CJ_PASSWORD,
+      CJ_API_KEY: !!CJ_API_KEY,
+      CJ_API_KEY_length: CJ_API_KEY ? CJ_API_KEY.length : 0,
+      CJ_PASSWORD_length: CJ_PASSWORD ? CJ_PASSWORD.length : 0,
+    },
+    attempts: results,
+    interpretation: 'Look at "has_accessToken: true" - that\'s the method that works',
+  });
 });
 
 // ===== Search CJ products by keyword =====
