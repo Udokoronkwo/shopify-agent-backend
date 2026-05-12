@@ -1,10 +1,10 @@
-// Shopify AI Agent Backend v9 - Faith Empire + Smart Dropship
+// Shopify AI Agent Backend v11 - CJ Auto-Import Edition
 // Brand pillars: Scripture Wall Art / Apparel / Digital (all Christian)
-// Volume pillar: Dropshipping (broad, real supplier photos by default)
-// NEW IN v9: include_ai_image flag for dropship (default OFF - real photos = trust)
+// Volume pillar: CJ Dropshipping (auto-import with REAL photos + auto-fulfillment)
+// NEW IN v11: Full CJ Dropshipping API integration
 // Pillar 1: Scripture Wall Art (POD)
 // Pillar 2: Digital Faith Products (wallpapers, devotionals)
-// Pillar 3: Trending Dropshipping (BROAD - real photos only)
+// Pillar 3: CJ Dropshipping (auto-import real products with real photos)
 // Pillar 4: Apparel POD (Christian tees, hoodies)
 
 const express = require('express');
@@ -26,6 +26,10 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PRINTIFY_API_KEY = process.env.PRINTIFY_API_KEY;
 const PRINTIFY_SHOP_ID = process.env.PRINTIFY_SHOP_ID;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
+
+// CJ Dropshipping - for auto product import with real photos
+const CJ_API_KEY = process.env.CJ_API_KEY;
+const CJ_API_BASE = 'https://developers.cjdropshipping.com/api2.0/v1';
 
 let SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 
@@ -165,14 +169,15 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v9.1 - Faith Empire + Smart Dropship (better JSON parsing)',
-    theme: 'Christian Brand + Broad Dropship (real photos)',
+    version: 'v11 - CJ Auto-Import Edition',
+    theme: 'Christian Brand + CJ Dropshipping (real photos auto-imported)',
     art_style: 'Classical oil painting / Renaissance / Hofmann-inspired',
     store: SHOPIFY_STORE,
     pillars: {
       scripture_wall_art: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
       digital_faith_products: !!(OPENAI_API_KEY && SHOPIFY_ACCESS_TOKEN),
       dropshipping: !!(ANTHROPIC_API_KEY && SHOPIFY_ACCESS_TOKEN),
+      cj_dropshipping: !!(CJ_API_KEY && SHOPIFY_ACCESS_TOKEN),
       apparel_pod: !!(OPENAI_API_KEY && PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
     },
     shopify_connected: !!SHOPIFY_ACCESS_TOKEN,
@@ -181,6 +186,7 @@ app.get('/', (req, res) => {
     printify_connected: !!PRINTIFY_API_KEY,
     printify_shop_id: PRINTIFY_SHOP_ID || null,
     tiktok_connected: !!TIKTOK_ACCESS_TOKEN,
+    cj_connected: !!CJ_API_KEY,
     capabilities: {
       trend_discovery: !!ANTHROPIC_API_KEY,
       product_ideation: !!ANTHROPIC_API_KEY,
@@ -191,10 +197,11 @@ app.get('/', (req, res) => {
       printify_create_wall_art: !!(PRINTIFY_API_KEY && PRINTIFY_SHOP_ID),
       digital_pack_create: !!(OPENAI_API_KEY && SHOPIFY_ACCESS_TOKEN),
       dropship_listing_create: !!SHOPIFY_ACCESS_TOKEN,
+      cj_auto_import: !!(CJ_API_KEY && SHOPIFY_ACCESS_TOKEN),
       shopify_publish: !!SHOPIFY_ACCESS_TOKEN,
       tiktok_post: !!TIKTOK_ACCESS_TOKEN,
     },
-    message: 'UD Store Agent v9 - Christian brand pillars + smart dropship (real supplier photos)'
+    message: 'UD Store Agent v11 - Christian pillars + CJ Dropshipping auto-import (real photos)'
   });
 });
 
@@ -1646,27 +1653,59 @@ Search the web for:
 - Reddit /r/BuyItForLife and shopping subreddits
 - Instagram reels viral products
 
+🎯 SMART CATEGORY STRATEGY (THIS IS CRITICAL):
+
+PRIORITIZE products from these HIGH SUCCESS categories (these have low return rates and proven dropship potential):
+✅ Pet products (toys, gadgets, accessories) - low returns, emotional buyers
+✅ Kitchen gadgets (problem solvers, viral cooking tools) - clear value prop
+✅ Beauty tools (ice rollers, gua sha, LED masks, jade rollers) - visible results
+✅ Phone accessories (chargers, holders, cases) - one-size-fits-all
+✅ Home decor small items (under $50 retail)
+✅ Fitness recovery tools (massage guns, foam rollers, posture correctors)
+
+ALSO ACCEPTABLE (medium-high success):
+🟡 Plant care accessories
+🟡 Car accessories (organizers, holders)
+🟡 Sleep aids (eye masks, sound machines, weighted items)
+🟡 Cleaning gadgets
+
+⚠️ AVOID THESE risky categories (high returns, sizing issues, quality problems):
+❌ Shoes (sizing nightmares, 30-40% returns)
+❌ Clothing with fitted sizing (jeans, dresses, fitted tops)
+❌ Leather goods claiming to be "genuine leather" (usually PU/PVC)
+❌ Watches (quality reveals fast)
+❌ Electronics with warranty needs
+❌ Underwear/intimates (hygiene issues)
+❌ Sized jewelry (rings need exact sizing)
+
+🔥 EXCEPTION RULE: You MAY include a risky category product ONLY if:
+- It has 100K+ TikTok views in the last 7 days, OR
+- It's mentioned in 5+ major media outlets THIS WEEK
+- AND you flag it clearly with "🔥 VIRAL EXCEPTION" in why_viral field
+
 CRITICAL FILTERS:
 - Must be a PHYSICAL product (not digital)
 - Must be DROPSHIPPABLE (available from suppliers like AliExpress/CJ/Spocket)
-- Must have HIGH PROFIT POTENTIAL (cheap to source, sells for 2-4x markup)
+- Supplier cost MUST be under $15 (for healthy margin)
+- Suggested retail MUST be under $50 (impulse buy zone)
 - Must have CURRENT VIRAL MOMENTUM (selling NOW, not 6 months ago)
-- Avoid copyrighted/branded items (Disney, sports teams, etc.)
+- Avoid copyrighted/branded items (Disney, sports teams, Apple, etc.)
 
 CRITICAL OUTPUT RULES:
 - Your response MUST start with the character "{" - no preamble, no explanation, no "Here's the JSON", no "Based on my research", nothing
 - Your response MUST end with "}"
 - NO markdown code fences (no \`\`\`json or \`\`\`)
 - NO text before or after the JSON object
-- Begin output immediately with the opening brace
 
 Required JSON structure:
 {
   "trends": [
     {
       "product_name": "specific product name",
-      "category": "category (Beauty/Tech/Home/Pets/etc)",
-      "why_viral": "1-2 sentence explanation of current virality",
+      "category": "Pets OR Kitchen OR Beauty OR Tech OR Home OR Fitness OR Plants OR Car OR Sleep OR Cleaning OR (only if viral exception) Other",
+      "success_category_rating": "HIGH OR MEDIUM-HIGH OR VIRAL-EXCEPTION",
+      "why_viral": "1-2 sentence explanation - if VIRAL-EXCEPTION include '🔥 VIRAL EXCEPTION:' prefix and cite the source",
+      "estimated_return_rate": "Low (<10%) OR Medium (10-20%) OR High (20%+)",
       "estimated_supplier_cost_usd": 8.50,
       "suggested_retail_price_usd": 24.99,
       "supplier_search_terms": "exact keywords for AliExpress search",
@@ -1683,7 +1722,7 @@ Required JSON structure:
   ]
 }
 
-REMEMBER: Start your response with "{" immediately. No preamble.`
+REMEMBER: Start with "{" immediately. Prioritize HIGH success categories. Only include risky categories if hyper-viral.`
       }]
     });
 
@@ -1729,6 +1768,7 @@ REMEMBER: Start your response with "{" immediately. No preamble.`
 <div style="background: #fff8e1; padding: 15px; border-radius: 8px; font-size: 12px; color: #666;">
 <strong>📦 INTERNAL SOURCING NOTES (DELETE BEFORE PUBLISHING):</strong>
 <ul>
+  <li><strong>Category fit:</strong> ${trend.success_category_rating || 'Not rated'} | <strong>Return risk:</strong> ${trend.estimated_return_rate || 'Unknown'}</li>
   <li><strong>Why viral:</strong> ${trend.why_viral}</li>
   <li><strong>Supplier search:</strong> ${trend.supplier_search_terms}</li>
   <li><strong>Best platform:</strong> ${trend.best_supplier_platform} - ${trend.supplier_reasoning}</li>
@@ -1737,6 +1777,7 @@ REMEMBER: Start your response with "{" immediately. No preamble.`
   <li><strong>Profit per sale:</strong> $${(retailPrice - trend.estimated_supplier_cost_usd).toFixed(2)}</li>
   <li><strong>Margin:</strong> ${(((retailPrice - trend.estimated_supplier_cost_usd) / retailPrice) * 100).toFixed(0)}%</li>
 </ul>
+<p><strong>⚠️ REMINDER:</strong> Add REAL supplier photos from AliExpress before publishing (don't use AI photos for dropship!)</p>
 <p><strong>Find supplier:</strong></p>
 <ul>
   <li><a href="${supplierLinks.aliexpress}">Search AliExpress</a></li>
@@ -1785,6 +1826,8 @@ REMEMBER: Start your response with "{" immediately. No preamble.`
           shopify_product_id: shopifyProduct.product.id,
           title: trend.shopify_title,
           category: trend.category,
+          success_category_rating: trend.success_category_rating || 'Not rated',
+          estimated_return_rate: trend.estimated_return_rate || 'Unknown',
           why_viral: trend.why_viral,
           pricing: {
             supplier_cost: trend.estimated_supplier_cost_usd,
@@ -2014,11 +2057,506 @@ app.post('/api/shopify/setup-trending-collection', async (req, res) => {
 });
 
 // ============================================================
+// ========== 🚀 CJ DROPSHIPPING INTEGRATION ==========
+// Real product catalog with real photos + auto-fulfillment
+// ============================================================
+
+// Helper: make authenticated CJ API request
+async function cjRequest(path, method = 'GET', body = null) {
+  if (!CJ_API_KEY) throw new Error('CJ_API_KEY not set in Railway env vars');
+  
+  const url = `${CJ_API_BASE}${path}`;
+  const options = {
+    method,
+    headers: {
+      'CJ-Access-Token': CJ_API_KEY,
+      'Content-Type': 'application/json',
+    },
+  };
+  if (body) options.body = JSON.stringify(body);
+  
+  const r = await fetch(url, options);
+  const text = await r.text();
+  let data;
+  try { data = JSON.parse(text); } catch (e) { data = { rawResponse: text }; }
+  
+  if (!r.ok) {
+    throw new Error(`CJ API error (${r.status}): ${data.message || data.msg || text.substring(0, 200)}`);
+  }
+  
+  // CJ API returns { result: true, message: "...", data: {...} }
+  if (data.result === false) {
+    throw new Error(`CJ error: ${data.message || data.msg || 'unknown'}`);
+  }
+  
+  return data;
+}
+
+// ===== Test endpoint - verify CJ connection works =====
+app.get('/api/cj/test', async (req, res) => {
+  try {
+    if (!CJ_API_KEY) {
+      return res.status(400).json({ 
+        error: 'CJ_API_KEY not set in Railway',
+        instructions: 'Add CJ_API_KEY to Railway environment variables' 
+      });
+    }
+    
+    // Try a simple product search as a connection test
+    const result = await cjRequest('/product/list?pageNum=1&pageSize=5');
+    res.json({ 
+      success: true, 
+      message: 'CJ API connected successfully!',
+      sample_products_count: result.data?.list?.length || 0,
+      cj_response_sample: {
+        result: result.result,
+        message: result.message,
+        total: result.data?.total,
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ 
+      error: e.message,
+      hint: 'If you see "Invalid Token", regenerate the API key in CJ dashboard and update Railway' 
+    });
+  }
+});
+
+// ===== Search CJ products by keyword =====
+app.get('/api/cj/search-products', async (req, res) => {
+  try {
+    const { keyword = '', pageNum = 1, pageSize = 20, categoryId = '' } = req.query;
+    let path = `/product/list?pageNum=${pageNum}&pageSize=${pageSize}`;
+    if (keyword) path += `&productNameEn=${encodeURIComponent(keyword)}`;
+    if (categoryId) path += `&categoryId=${categoryId}`;
+    
+    const result = await cjRequest(path);
+    
+    // Simplify the response for easier reading
+    const simplified = (result.data?.list || []).map(p => ({
+      pid: p.pid,
+      productName: p.productNameEn,
+      sku: p.productSku,
+      category: p.categoryName,
+      sellPrice: p.sellPrice,
+      productImage: p.productImage,
+      productImageSet: p.productImageSet, // additional images
+      variants: p.variants?.length || 0,
+      sourceFrom: p.sourceFrom,
+      listedNum: p.listedNum, // popularity indicator
+    }));
+    
+    res.json({
+      success: true,
+      total: result.data?.total,
+      page: pageNum,
+      pageSize,
+      products: simplified,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== Get full product details =====
+app.get('/api/cj/product/:pid', async (req, res) => {
+  try {
+    const { pid } = req.params;
+    const result = await cjRequest(`/product/query?pid=${pid}`);
+    res.json({ success: true, product: result.data });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== Import a single CJ product to Shopify with REAL photos =====
+app.post('/api/cj/import-to-shopify', async (req, res) => {
+  try {
+    if (!SHOPIFY_ACCESS_TOKEN) return res.status(400).json({ error: 'SHOPIFY_ACCESS_TOKEN not set' });
+    if (!CJ_API_KEY) return res.status(400).json({ error: 'CJ_API_KEY not set' });
+    
+    const { 
+      pid,  // CJ product ID
+      markup_multiplier = 2.8, // 2.8x markup default
+      enhance_with_ai = true, // use Claude to write better Shopify copy
+      add_to_trending_collection = true,
+    } = req.body;
+    
+    if (!pid) return res.status(400).json({ error: 'pid (CJ product ID) required' });
+    
+    // Step 1: Get full product details from CJ
+    const cjData = await cjRequest(`/product/query?pid=${pid}`);
+    const product = cjData.data;
+    if (!product) return res.status(404).json({ error: 'CJ product not found' });
+    
+    // Step 2: Build Shopify product data
+    const productName = product.productNameEn || 'Untitled Product';
+    const supplierCost = parseFloat(product.sellPrice) || 10;
+    const retailPrice = supplierCost * markup_multiplier;
+    const compareAt = retailPrice * 1.4;
+    
+    // Collect all product photos (multiple angles from CJ)
+    const photos = [];
+    if (product.productImage) photos.push(product.productImage);
+    if (product.productImageSet && Array.isArray(product.productImageSet)) {
+      photos.push(...product.productImageSet);
+    }
+    
+    let shopifyTitle = productName.substring(0, 70);
+    let shopifyDescription = product.description || `<p>${productName}</p>`;
+    let tags = ['cj-dropship', 'trending', 'auto-imported'];
+    let tiktokContent = null;
+    
+    // Step 3: (Optional) Use Claude to write better Shopify copy
+    if (enhance_with_ai && ANTHROPIC_API_KEY) {
+      try {
+        const claude = getClaude();
+        const enhance = await claude.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1500,
+          messages: [{
+            role: 'user',
+            content: `Rewrite this product listing to be more compelling for Shopify and TikTok marketing.
+
+Product: ${productName}
+Category: ${product.categoryName || 'general'}
+Original description: ${(product.description || '').substring(0, 1000)}
+Supplier price: $${supplierCost}
+Retail price: $${retailPrice.toFixed(2)}
+
+Reply with ONLY raw JSON:
+{
+  "shopify_title": "compelling title under 70 chars",
+  "shopify_description_html": "<p>full HTML with <ul><li> bullets - benefits, features, urgency push - around 300 words</p>",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "tiktok_hook": "viral 3-second hook",
+  "tiktok_caption": "full TikTok caption with emojis and CTA",
+  "tiktok_hashtags": "#tag1 #tag2 #tag3"
+}
+
+Start with { immediately. No preamble.`
+          }]
+        });
+        
+        const aiData = extractJSON(getAllText(enhance.content));
+        if (aiData) {
+          shopifyTitle = aiData.shopify_title || shopifyTitle;
+          shopifyDescription = aiData.shopify_description_html || shopifyDescription;
+          tags = [...(aiData.tags || []), 'cj-dropship', 'trending', 'auto-imported'];
+          tiktokContent = {
+            hook: aiData.tiktok_hook,
+            caption: aiData.tiktok_caption,
+            hashtags: aiData.tiktok_hashtags,
+          };
+        }
+      } catch (aiErr) {
+        console.error('AI enhancement failed, using original:', aiErr.message);
+      }
+    }
+    
+    // Add sourcing notes to description
+    const enrichedDescription = `${shopifyDescription}
+
+<hr style="margin: 30px 0; border: 1px dashed #ccc;">
+<div style="background: #fff8e1; padding: 15px; border-radius: 8px; font-size: 12px; color: #666;">
+<strong>📦 CJ DROPSHIP NOTES (DELETE BEFORE PUBLISHING):</strong>
+<ul>
+  <li><strong>CJ Product ID:</strong> ${pid}</li>
+  <li><strong>CJ Product Name:</strong> ${productName}</li>
+  <li><strong>Category:</strong> ${product.categoryName || 'N/A'}</li>
+  <li><strong>Supplier cost:</strong> $${supplierCost}</li>
+  <li><strong>Retail price:</strong> $${retailPrice.toFixed(2)}</li>
+  <li><strong>Profit per sale:</strong> $${(retailPrice - supplierCost).toFixed(2)}</li>
+  <li><strong>Margin:</strong> ${(((retailPrice - supplierCost) / retailPrice) * 100).toFixed(0)}%</li>
+  <li><strong>Photos imported:</strong> ${photos.length}</li>
+</ul>
+${tiktokContent ? `
+<p><strong>📱 TikTok Marketing:</strong></p>
+<ul>
+  <li><strong>Hook:</strong> ${tiktokContent.hook}</li>
+  <li><strong>Caption:</strong> ${tiktokContent.caption}</li>
+  <li><strong>Hashtags:</strong> ${tiktokContent.hashtags}</li>
+</ul>` : ''}
+<p><strong>✅ Auto-fulfillment:</strong> When customer buys, CJ ships directly via Shopify integration.</p>
+</div>`;
+    
+    // Step 4: Create Shopify product with REAL CJ photos
+    const productPayload = {
+      product: {
+        title: shopifyTitle,
+        body_html: enrichedDescription,
+        vendor: 'UD Store',
+        product_type: 'Trending',
+        tags: tags.join(', '),
+        status: 'draft', // Always draft - you approve
+        variants: [{
+          price: String(retailPrice.toFixed(2)),
+          compare_at_price: String(compareAt.toFixed(2)),
+          sku: product.productSku || `CJ-${pid}`,
+          inventory_quantity: 100,
+          inventory_management: null,
+          requires_shipping: true,
+          taxable: true,
+        }],
+        images: photos.map(src => ({ src })),
+      }
+    };
+    
+    const shopifyProduct = await shopifyRequest('products.json', 'POST', productPayload);
+    
+    // Step 5: Add to Trending collection
+    let collection = null;
+    if (add_to_trending_collection) {
+      collection = await ensureTrendingCollection();
+      if (collection) {
+        await addProductToCollection(shopifyProduct.product.id, collection.id);
+      }
+    }
+    
+    res.json({
+      success: true,
+      shopify_product_id: shopifyProduct.product.id,
+      shopify_admin_url: `https://${SHOPIFY_STORE}/admin/products/${shopifyProduct.product.id}`,
+      title: shopifyTitle,
+      pricing: {
+        supplier_cost: supplierCost,
+        retail: retailPrice.toFixed(2),
+        profit_per_sale: (retailPrice - supplierCost).toFixed(2),
+        margin_percent: (((retailPrice - supplierCost) / retailPrice) * 100).toFixed(1) + '%',
+      },
+      photos_imported: photos.length,
+      marketing: tiktokContent,
+      collection: collection?.title,
+      next_steps: [
+        '1. Review the draft in Shopify',
+        '2. Remove the "CJ DROPSHIP NOTES" section if going live',
+        '3. Set status to "Active" when ready',
+        '4. Install CJ Dropshipping Shopify app for auto-fulfillment',
+        '5. Use the TikTok content to drive traffic',
+      ],
+    });
+  } catch (e) {
+    console.error('CJ import error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== MEGA: Auto-import trending CJ products =====
+// Searches CJ for products matching criteria, imports best matches to Shopify
+app.post('/api/pipeline/cj-auto-import', async (req, res) => {
+  try {
+    if (!CJ_API_KEY) return res.status(400).json({ error: 'CJ_API_KEY not set' });
+    if (!SHOPIFY_ACCESS_TOKEN) return res.status(400).json({ error: 'SHOPIFY_ACCESS_TOKEN not set' });
+    
+    const {
+      keyword = 'trending',
+      count = 3, // how many products to import
+      max_supplier_cost = 15,
+      markup_multiplier = 2.8,
+      enhance_with_ai = true,
+      categoryId = '', // optional CJ category filter
+    } = req.body;
+    
+    if (count > 5) return res.status(400).json({ error: 'Max 5 imports per call' });
+    
+    const log = [];
+    
+    // Step 1: Search CJ catalog
+    log.push(`Searching CJ for "${keyword}"...`);
+    let searchPath = `/product/list?pageNum=1&pageSize=50`;
+    if (keyword) searchPath += `&productNameEn=${encodeURIComponent(keyword)}`;
+    if (categoryId) searchPath += `&categoryId=${categoryId}`;
+    
+    const searchResult = await cjRequest(searchPath);
+    const allProducts = searchResult.data?.list || [];
+    
+    if (!allProducts.length) {
+      return res.status(404).json({ error: `No CJ products found for "${keyword}"`, suggestion: 'Try a broader keyword' });
+    }
+    
+    log.push(`Found ${allProducts.length} CJ products. Filtering...`);
+    
+    // Step 2: Filter for good candidates (cheap, has photos)
+    const candidates = allProducts
+      .filter(p => {
+        const cost = parseFloat(p.sellPrice) || 999;
+        return cost > 0 && cost <= max_supplier_cost && p.productImage;
+      })
+      .sort((a, b) => (b.listedNum || 0) - (a.listedNum || 0)) // sort by popularity
+      .slice(0, count);
+    
+    if (!candidates.length) {
+      return res.status(404).json({ 
+        error: `No CJ products under $${max_supplier_cost} with photos`, 
+        suggestion: 'Try a different keyword or raise max_supplier_cost' 
+      });
+    }
+    
+    log.push(`Selected ${candidates.length} top candidates by popularity`);
+    
+    // Step 3: Import each one via the import-to-shopify logic
+    const results = [];
+    for (const candidate of candidates) {
+      try {
+        log.push(`Importing: ${candidate.productNameEn?.substring(0, 50)}...`);
+        
+        // Get full product details (variants, all photos)
+        const detail = await cjRequest(`/product/query?pid=${candidate.pid}`);
+        const product = detail.data || candidate;
+        
+        const productName = product.productNameEn || candidate.productNameEn;
+        const supplierCost = parseFloat(product.sellPrice || candidate.sellPrice) || 10;
+        const retailPrice = supplierCost * markup_multiplier;
+        const compareAt = retailPrice * 1.4;
+        
+        const photos = [];
+        if (product.productImage) photos.push(product.productImage);
+        if (Array.isArray(product.productImageSet)) photos.push(...product.productImageSet);
+        if (!photos.length && candidate.productImage) photos.push(candidate.productImage);
+        
+        let shopifyTitle = productName.substring(0, 70);
+        let shopifyDescription = product.description || `<p>${productName}</p>`;
+        let tags = ['cj-dropship', 'trending', 'auto-imported'];
+        let tiktokContent = null;
+        
+        // AI enhance
+        if (enhance_with_ai && ANTHROPIC_API_KEY) {
+          try {
+            const claude = getClaude();
+            const enhance = await claude.messages.create({
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 1500,
+              messages: [{
+                role: 'user',
+                content: `Rewrite this product listing for Shopify and TikTok.
+
+Product: ${productName}
+Category: ${product.categoryName || 'general'}
+Retail price: $${retailPrice.toFixed(2)}
+
+Reply with ONLY raw JSON (start with {):
+{
+  "shopify_title": "compelling title under 70 chars",
+  "shopify_description_html": "<p>HTML with <ul><li> bullets, ~250 words</p>",
+  "tags": ["tag1","tag2","tag3","tag4","tag5"],
+  "tiktok_hook": "viral 3-second hook",
+  "tiktok_caption": "TikTok caption with emojis and CTA",
+  "tiktok_hashtags": "#tag1 #tag2 #tag3"
+}`
+              }]
+            });
+            const aiData = extractJSON(getAllText(enhance.content));
+            if (aiData) {
+              shopifyTitle = aiData.shopify_title || shopifyTitle;
+              shopifyDescription = aiData.shopify_description_html || shopifyDescription;
+              tags = [...(aiData.tags || []), 'cj-dropship', 'trending', 'auto-imported'];
+              tiktokContent = {
+                hook: aiData.tiktok_hook,
+                caption: aiData.tiktok_caption,
+                hashtags: aiData.tiktok_hashtags,
+              };
+            }
+          } catch (aiErr) {
+            log.push(`AI enhancement skipped: ${aiErr.message}`);
+          }
+        }
+        
+        const enrichedDescription = `${shopifyDescription}
+
+<hr style="margin: 30px 0; border: 1px dashed #ccc;">
+<div style="background: #fff8e1; padding: 15px; border-radius: 8px; font-size: 12px; color: #666;">
+<strong>📦 CJ DROPSHIP NOTES (DELETE BEFORE PUBLISHING):</strong>
+<ul>
+  <li><strong>CJ PID:</strong> ${candidate.pid}</li>
+  <li><strong>Supplier cost:</strong> $${supplierCost} | <strong>Retail:</strong> $${retailPrice.toFixed(2)} | <strong>Profit:</strong> $${(retailPrice - supplierCost).toFixed(2)} (${(((retailPrice - supplierCost) / retailPrice) * 100).toFixed(0)}%)</li>
+  <li><strong>Photos:</strong> ${photos.length} real CJ images imported</li>
+</ul>
+${tiktokContent ? `<p><strong>📱 TikTok:</strong> ${tiktokContent.hook}<br>${tiktokContent.hashtags}</p>` : ''}
+<p><strong>✅ Auto-fulfillment ready:</strong> Install CJ Shopify app to enable.</p>
+</div>`;
+        
+        const shopifyProduct = await shopifyRequest('products.json', 'POST', {
+          product: {
+            title: shopifyTitle,
+            body_html: enrichedDescription,
+            vendor: 'UD Store',
+            product_type: 'Trending',
+            tags: tags.join(', '),
+            status: 'draft',
+            variants: [{
+              price: String(retailPrice.toFixed(2)),
+              compare_at_price: String(compareAt.toFixed(2)),
+              sku: product.productSku || `CJ-${candidate.pid}`,
+              inventory_quantity: 100,
+              inventory_management: null,
+              requires_shipping: true,
+              taxable: true,
+            }],
+            images: photos.map(src => ({ src })),
+          }
+        });
+        
+        // Add to Trending collection
+        const collection = await ensureTrendingCollection();
+        if (collection) {
+          await addProductToCollection(shopifyProduct.product.id, collection.id);
+        }
+        
+        results.push({
+          success: true,
+          cj_pid: candidate.pid,
+          shopify_product_id: shopifyProduct.product.id,
+          shopify_admin_url: `https://${SHOPIFY_STORE}/admin/products/${shopifyProduct.product.id}`,
+          title: shopifyTitle,
+          pricing: {
+            supplier_cost: supplierCost,
+            retail: retailPrice.toFixed(2),
+            profit_per_sale: (retailPrice - supplierCost).toFixed(2),
+            margin_percent: (((retailPrice - supplierCost) / retailPrice) * 100).toFixed(1) + '%',
+          },
+          photos_imported: photos.length,
+          marketing: tiktokContent,
+        });
+        
+        log.push(`✅ Imported: ${shopifyTitle.substring(0, 50)} (${photos.length} photos)`);
+      } catch (err) {
+        results.push({ success: false, cj_pid: candidate.pid, error: err.message });
+        log.push(`❌ Failed: ${candidate.pid} - ${err.message}`);
+      }
+    }
+    
+    res.json({
+      success: true,
+      pillar: 'cj-dropship',
+      log,
+      summary: {
+        attempted: candidates.length,
+        imported: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+      },
+      products: results,
+      next_steps: [
+        '1. Open Shopify admin → Products',
+        '2. Review each imported product (real CJ photos already attached)',
+        '3. Click "Edit" on ones you want to publish',
+        '4. Remove the "CJ Dropship Notes" section',
+        '5. Set status from "draft" to "active"',
+        '6. Install CJ Dropshipping Shopify app for auto-fulfillment (one-time setup)',
+        '7. Use TikTok content to drive traffic',
+      ],
+    });
+  } catch (e) {
+    console.error('CJ auto-import error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
 app.listen(PORT, () => {
-  console.log(`🚀 UD Store Agent v9 (Faith Empire + Smart Dropship) on port ${PORT}`);
+  console.log(`🚀 UD Store Agent v11 (CJ Auto-Import Edition) on port ${PORT}`);
   console.log(`📍 Store: ${SHOPIFY_STORE}`);
   console.log(`🙏 Brand: Christian Wall Art / Apparel / Digital`);
-  console.log(`🛍️ Dropship: Broad, real supplier photos by default (no fake AI photos)`);
-  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} (shop: ${PRINTIFY_SHOP_ID || 'none'}) | TikTok: ${!!TIKTOK_ACCESS_TOKEN}`);
-  console.log(`🏛️ Pillars: Scripture Wall Art ✓ Digital Faith ✓ Dropshipping ✓ Apparel ✓`);
+  console.log(`🛍️ Dropship: CJ auto-import with REAL photos + auto-fulfillment ready`);
+  console.log(`🔑 Shopify: ${!!SHOPIFY_ACCESS_TOKEN} | Claude: ${!!ANTHROPIC_API_KEY} | OpenAI: ${!!OPENAI_API_KEY} | Printify: ${!!PRINTIFY_API_KEY} | TikTok: ${!!TIKTOK_ACCESS_TOKEN} | CJ: ${!!CJ_API_KEY}`);
+  console.log(`🏛️ Pillars: Scripture Wall Art ✓ Digital Faith ✓ CJ Dropshipping ✓ Apparel ✓`);
 });
