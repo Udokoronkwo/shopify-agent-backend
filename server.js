@@ -175,7 +175,7 @@ app.get('/tiktokCiTHepTjzowws82Q55YMYSvJscv4JfET.txt', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    version: 'v11.2 - CJ Auto-Import (with auth debugger)',
+    version: 'v11.3 - CJ Auto-Import (resilient image handling)',
     theme: 'Christian Brand + CJ Dropshipping (real photos auto-imported)',
     art_style: 'Classical oil painting / Renaissance / Hofmann-inspired',
     store: SHOPIFY_STORE,
@@ -2621,26 +2621,62 @@ ${tiktokContent ? `<p><strong>📱 TikTok:</strong> ${tiktokContent.hook}<br>${t
 <p><strong>✅ Auto-fulfillment ready:</strong> Install CJ Shopify app to enable.</p>
 </div>`;
         
-        const shopifyProduct = await shopifyRequest('products.json', 'POST', {
-          product: {
-            title: shopifyTitle,
-            body_html: enrichedDescription,
-            vendor: 'UD Store',
-            product_type: 'Trending',
-            tags: tags.join(', '),
-            status: 'draft',
-            variants: [{
-              price: String(retailPrice.toFixed(2)),
-              compare_at_price: String(compareAt.toFixed(2)),
-              sku: product.productSku || `CJ-${candidate.pid}`,
-              inventory_quantity: 100,
-              inventory_management: null,
-              requires_shipping: true,
-              taxable: true,
-            }],
-            images: photos.map(src => ({ src })),
-          }
+        // Filter to only valid-looking image URLs (Shopify rejects bad ones)
+        const validPhotos = photos.filter(url => {
+          if (!url || typeof url !== 'string') return false;
+          if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
+          // Avoid URLs with query parameters that suggest expired/signed URLs
+          if (url.length > 2000) return false; // overly long URL
+          return true;
         });
+        
+        // STEP A: Create the Shopify product WITHOUT images first (most reliable)
+        let shopifyProduct;
+        try {
+          shopifyProduct = await shopifyRequest('products.json', 'POST', {
+            product: {
+              title: shopifyTitle,
+              body_html: enrichedDescription,
+              vendor: 'UD Store',
+              product_type: 'Trending',
+              tags: tags.join(', '),
+              status: 'draft',
+              variants: [{
+                price: String(retailPrice.toFixed(2)),
+                compare_at_price: String(compareAt.toFixed(2)),
+                sku: product.productSku || `CJ-${candidate.pid}`,
+                inventory_quantity: 100,
+                inventory_management: null,
+                requires_shipping: true,
+                taxable: true,
+              }],
+              // NO images here - we'll add them separately
+            }
+          });
+        } catch (shopifyErr) {
+          // Capture Shopify's detailed error
+          const shopifyError = shopifyErr.response?.data?.errors || shopifyErr.response?.data || shopifyErr.message;
+          throw new Error(`Shopify create failed: ${JSON.stringify(shopifyError).substring(0, 500)}`);
+        }
+        
+        // STEP B: Try to attach images one at a time (so one bad image doesn't kill the whole thing)
+        let imagesAdded = 0;
+        const imageErrors = [];
+        for (const imgUrl of validPhotos.slice(0, 10)) { // max 10 images
+          try {
+            await shopifyRequest(`products/${shopifyProduct.product.id}/images.json`, 'POST', {
+              image: { src: imgUrl }
+            });
+            imagesAdded++;
+            // Small delay to avoid Shopify rate limit
+            await new Promise(r => setTimeout(r, 300));
+          } catch (imgErr) {
+            imageErrors.push({
+              url: imgUrl.substring(0, 80),
+              error: imgErr.response?.data?.errors || imgErr.message,
+            });
+          }
+        }
         
         // Add to Trending collection
         const collection = await ensureTrendingCollection();
@@ -2660,14 +2696,22 @@ ${tiktokContent ? `<p><strong>📱 TikTok:</strong> ${tiktokContent.hook}<br>${t
             profit_per_sale: (retailPrice - supplierCost).toFixed(2),
             margin_percent: (((retailPrice - supplierCost) / retailPrice) * 100).toFixed(1) + '%',
           },
-          photos_imported: photos.length,
+          photos_attempted: validPhotos.length,
+          photos_imported: imagesAdded,
+          image_errors: imageErrors.length ? imageErrors : undefined,
           marketing: tiktokContent,
         });
         
-        log.push(`✅ Imported: ${shopifyTitle.substring(0, 50)} (${photos.length} photos)`);
+        log.push(`✅ Imported: ${shopifyTitle.substring(0, 50)} (${imagesAdded}/${validPhotos.length} photos)`);
       } catch (err) {
-        results.push({ success: false, cj_pid: candidate.pid, error: err.message });
-        log.push(`❌ Failed: ${candidate.pid} - ${err.message}`);
+        const detailedError = err.response?.data?.errors || err.response?.data || err.message;
+        results.push({ 
+          success: false, 
+          cj_pid: candidate.pid, 
+          product_name: candidate.productNameEn,
+          error: typeof detailedError === 'string' ? detailedError : JSON.stringify(detailedError).substring(0, 500),
+        });
+        log.push(`❌ Failed: ${candidate.productNameEn?.substring(0, 40)} - ${err.message.substring(0, 100)}`);
       }
     }
     
